@@ -3,9 +3,25 @@ spring:
     name: wedding-pai
   profiles:
     default: demo
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  servlet:
+    multipart:
+      max-file-size: 256KB
+      max-request-size: 512KB
+      file-size-threshold: 0
 server:
   address: 127.0.0.1
   port: ${PORT:8080}
+  servlet:
+    session:
+      timeout: 30m
+      tracking-modes: cookie
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${SESSION_COOKIE_SECURE:false}
 management:
   endpoints:
     web:

@@ -9,4 +9,5 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    # Development database only: V900 adds clearly marked synthetic venues.
+    locations: classpath:db/migration,classpath:db/demo
