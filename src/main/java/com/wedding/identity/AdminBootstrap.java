@@ -35,8 +35,7 @@ public class AdminBootstrap implements ApplicationRunner {
         boolean generated=password==null||password.isBlank();
         if(generated&&!demo) throw new IllegalStateException("Set ADMIN_PASSWORD for explicit administrator provisioning");
         if(generated) { byte[] bytes=new byte[24];new SecureRandom().nextBytes(bytes);password=Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }
-        var member=service.register(email,"운영 관리자",password);
-        members.grantAdmin(member.id());
+        service.registerAdmin(email,"운영 관리자",password);
         if(demo) {
             Path path=Path.of(".runtime","admin-initial-login.txt");Files.createDirectories(path.getParent());
             Files.writeString(path,"Local demo administrator (changes after server restart)\nEmail: "+email+"\nPassword: "+password+"\nURL: http://127.0.0.1:5173/admin\n",StandardCharsets.UTF_8);

@@ -22,6 +22,11 @@ public class MemberService {
         validatePassword(password);
         return members.create(normalize(email),validName(name),passwords.encode(password));
     }
+    // Provisioning is internal; public registration never chooses an account role.
+    Member registerAdmin(String email, String name, String password) {
+        validatePassword(password);
+        return members.createAdmin(normalize(email),validName(name),passwords.encode(password));
+    }
     public Member login(String email, String password) {
         if (password.getBytes(StandardCharsets.UTF_8).length>72) throw unauthorized();
         var candidate=members.byEmail(normalize(email));

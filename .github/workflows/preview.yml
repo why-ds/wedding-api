@@ -1,0 +1,82 @@
+name: Verify and deploy API preview
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: api-preview-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: wedding_ci
+          POSTGRES_USER: wedding_ci
+          POSTGRES_PASSWORD: ci-only-disposable-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wedding_ci -d wedding_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Validate deployment scripts
+        run: |
+          for script in deploy/*.sh; do bash -n "$script"; done
+          sed "s|/usr/lib/jvm/java-21-openjdk-amd64/bin/java|$JAVA_HOME/bin/java|" deploy/wedding-api.service > "$RUNNER_TEMP/wedding-api.service"
+          systemd-analyze verify "$RUNNER_TEMP/wedding-api.service"
+      - name: Test against PostgreSQL 16 and package
+        env:
+          WEDDING_POSTGRES_TESTS: 'true'
+        run: bash gradlew test bootJar --no-daemon
+      - name: Prepare artifact
+        run: |
+          mkdir artifact
+          cp build/libs/wedding-api.jar artifact/app.jar
+          cd artifact
+          sha256sum app.jar > app.jar.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wedding-api
+          path: artifact/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: api-test-results
+          path: build/reports/tests/
+          retention-days: 7
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.WEDDING_DEPLOY_ENABLED == 'true'
+    environment: preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: wedding-api
+          path: artifact
+      - name: Upload and activate only wedding-api.service
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_KEY: ${{ secrets.SERVER_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        run: bash deploy/push-release.sh "$GITHUB_SHA"

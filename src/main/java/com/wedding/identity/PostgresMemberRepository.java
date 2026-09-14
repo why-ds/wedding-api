@@ -24,6 +24,10 @@ public class PostgresMemberRepository implements MemberRepository {
     }
     public Optional<Member> byEmail(String email) { return find("c.email=:value",email); }
     public Optional<Member> byId(UUID id) { return find("u.id=:value",id); }
+    @Transactional public Member createAdmin(String email, String name, String hash) {
+        // One transaction: a role failure must not leave a partially provisioned account.
+        var member=create(email,name,hash);grantAdmin(member.id());return member;
+    }
     @Transactional public Member create(String email, String name, String hash) {
         UUID id=UUID.randomUUID();
         try {

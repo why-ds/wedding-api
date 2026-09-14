@@ -1,0 +1,22 @@
+# Activate alongside postgres: a persistent preview with clearly synthetic catalog data.
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 4
+      minimum-idle: 1
+      connection-timeout: 10000
+server:
+  port: ${PORT:18081}
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: 30
+      min-spare: 2
+  servlet:
+    session:
+      cookie:
+        name: WEDDINGSESSION
+        secure: ${SESSION_COOKIE_SECURE:true}
+wedding:
+  admin:
+    bootstrap-enabled: ${WEDDING_ADMIN_BOOTSTRAP_ENABLED:false}

@@ -1,0 +1,35 @@
+[Unit]
+Description=All About Wedding API preview
+After=network.target postgresql.service
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=wedding-api
+Group=wedding-api
+WorkingDirectory=/var/lib/wedding-api
+EnvironmentFile=/etc/wedding-api.env
+# Explicit Java 21 path keeps the host's Java 17 default intact.
+# JVM options also avoid matching the legacy lunch deploy's broad 'java -jar' pattern.
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Xms128m -Xmx384m -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError -jar /opt/wedding-api/current/app.jar
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+SuccessExitStatus=143
+MemoryHigh=640M
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=128
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wedding-api
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

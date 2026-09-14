@@ -15,6 +15,9 @@ public class DemoMemberRepository implements MemberRepository {
     public synchronized void grantAdmin(UUID id) { if(!members.containsKey(id)) throw MemberService.unauthorized(); admins.add(id); }
     public synchronized Optional<Member> byEmail(String email) { return Optional.ofNullable(emails.get(email)).flatMap(this::byId); }
     public synchronized Optional<Member> byId(UUID id) { return Optional.ofNullable(members.get(id)); }
+    public synchronized Member createAdmin(String email, String name, String hash) {
+        var member=create(email,name,hash);grantAdmin(member.id());return member;
+    }
     public synchronized Member create(String email, String name, String hash) {
         if (emails.containsKey(email)) throw MemberService.conflict();
         var member = new Member(UUID.randomUUID(), email, name, hash);
