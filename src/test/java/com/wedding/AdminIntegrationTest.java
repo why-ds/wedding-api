@@ -96,6 +96,8 @@ class AdminIntegrationTest {
         String admin=admin();
         mvc.perform(post("/api/v1/admin/catalog").with(user(admin)).contentType("application/json").content(data(key()))).andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/admin/catalog").with(user(admin)).with(csrf()).contentType("application/json").content(" ".repeat(262145))).andExpect(status().isPayloadTooLarge());
+        mvc.perform(post("/api/v1/admin/catalog").with(user(admin)).with(csrf()).contentType("application/vnd.wedding+json").content(" ".repeat(262145))).andExpect(status().isPayloadTooLarge());
+        mvc.perform(post("/api/v1/admin/catalog").with(user(admin)).with(csrf()).contentType("application/problem+json;charset=UTF-8").content(" ".repeat(262145)).with(request -> {request.removeHeader("Content-Length"); return request;})).andExpect(status().isPayloadTooLarge());
         preview(admin,"big.csv","x".repeat(262145)).andExpect(status().isBadRequest());
         StringBuilder many=new StringBuilder(String.join(",",CatalogIntakeService.HEADERS)+"\n");for(int i=0;i<101;i++)many.append("key-").append(i).append(",업체 ").append(i).append(",지점,VENUE,서울,주소,,\n");
         preview(admin,"many.csv",many.toString()).andExpect(status().isBadRequest());

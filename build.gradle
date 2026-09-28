@@ -6,6 +6,8 @@ plugins {
 
 group = 'com.wedding'
 version = '0.0.1-SNAPSHOT'
+// Security fixes through Tomcat 11.0.26; keep the core/EL/WebSocket modules aligned.
+ext['tomcat.version'] = '11.0.26'
 description = 'wedding-api'
 
 java {

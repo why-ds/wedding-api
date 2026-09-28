@@ -10,7 +10,7 @@ public class JsonBodyLimitFilter extends OncePerRequestFilter {
     private static final int MAX=262144;
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws IOException,ServletException {
         String type=request.getContentType();
-        if(!request.getRequestURI().startsWith("/api/")||type==null||!type.toLowerCase(java.util.Locale.ROOT).startsWith("application/json")) {chain.doFilter(request,response);return;}
+        if(!request.getRequestURI().startsWith("/api/")||!isJson(type)) {chain.doFilter(request,response);return;}
         if(request.getContentLengthLong()>MAX) {reject(response);return;}
         byte[] body=request.getInputStream().readNBytes(MAX+1);
         if(body.length>MAX){reject(response);return;}
@@ -26,6 +26,14 @@ public class JsonBodyLimitFilter extends OncePerRequestFilter {
             }
             @Override public BufferedReader getReader(){return new BufferedReader(new InputStreamReader(getInputStream(),java.nio.charset.StandardCharsets.UTF_8));}
         },response);
+    }
+    private boolean isJson(String type) {
+        if(type==null)return false;
+        try {
+            var media=org.springframework.http.MediaType.parseMediaType(type);
+            return media.getType().equalsIgnoreCase("application") &&
+                (media.getSubtype().equalsIgnoreCase("json") || media.getSubtype().toLowerCase(java.util.Locale.ROOT).endsWith("+json"));
+        } catch(org.springframework.http.InvalidMediaTypeException ex) { return false; }
     }
     private void reject(HttpServletResponse response) throws IOException {
         response.setStatus(413);response.setContentType("application/problem+json;charset=UTF-8");

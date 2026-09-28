@@ -19,5 +19,5 @@ options=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostK
 remote="$SERVER_USER@$SERVER_HOST"
 upload="wedding-deploy/api/$release"
 ssh "${options[@]}" "$remote" "mkdir -p '$upload'"
-scp "${options[@]}" artifact/app.jar artifact/app.jar.sha256 deploy/activate-release.sh "$remote:$upload/"
+scp "${options[@]}" artifact/app.jar artifact/app.jar.sha256 deploy/activate-release.sh deploy/prune-releases.py "$remote:$upload/"
 ssh "${options[@]}" "$remote" "bash '$upload/activate-release.sh' '$release'"

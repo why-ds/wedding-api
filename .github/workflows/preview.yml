@@ -36,8 +36,11 @@ jobs:
       - name: Validate deployment scripts
         run: |
           for script in deploy/*.sh; do bash -n "$script"; done
+          python3 deploy/test_prune_releases.py
           sed "s|/usr/lib/jvm/java-21-openjdk-amd64/bin/java|$JAVA_HOME/bin/java|" deploy/wedding-api.service > "$RUNNER_TEMP/wedding-api.service"
           systemd-analyze verify "$RUNNER_TEMP/wedding-api.service"
+          sed "s|/usr/lib/jvm/java-21-openjdk-amd64/bin/java|$JAVA_HOME/bin/java|" deploy/wedding-migrate.service > "$RUNNER_TEMP/wedding-migrate.service"
+          systemd-analyze verify "$RUNNER_TEMP/wedding-migrate.service"
       - name: Test against PostgreSQL 16 and package
         env:
           WEDDING_POSTGRES_TESTS: 'true'

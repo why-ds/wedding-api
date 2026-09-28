@@ -30,6 +30,29 @@ class PostgresIntegrationTest {
     @Autowired CatalogDraftRepository drafts;
     @Autowired VenueRepository venues;
     @Autowired JdbcClient jdbc;
+    @Autowired javax.sql.DataSource dataSource;
+    @Test @org.springframework.transaction.annotation.Transactional
+    void syntheticFixtureRemainsVisibleAfterRecheckAndFiltersRunInDatabase() {
+        jdbc.sql("UPDATE pricing.offer_revision SET verified_at=now()-interval '92 days',recheck_after=now()-interval '1 day' WHERE terms_snapshot @> '{\"demo\":true}'::jsonb").update();
+        assertEquals(4,venues.findAll().size());
+        assertEquals(1,venues.candidates("강남","호텔","오브").size());
+        assertEquals(0,venues.candidates("강남","가든","").size());
+        assertTrue(venues.existsPublished(UUID.fromString("10000000-0000-4000-8000-000000000001")));
+        assertFalse(venues.existsPublished(UUID.randomUUID()));
+    }
+    @Test void runtimeRoleCanReadButCannotChangeSchemaOrRewriteAudit() throws Exception {
+        try(var connection=dataSource.getConnection();var statement=connection.createStatement()) {
+            statement.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='wedding_app') THEN CREATE ROLE wedding_app NOLOGIN; END IF; END $$");
+            DatabaseMigration.grantRuntimeAccess(connection);
+            statement.execute("SET ROLE wedding_app");
+            try {
+                try(var rows=statement.executeQuery("SELECT count(*) FROM search.demo_venue_projection")) {assertTrue(rows.next());assertEquals(4,rows.getInt(1));}
+                assertEquals("42501",assertThrows(java.sql.SQLException.class,()->statement.execute("CREATE TABLE iam.forbidden_runtime_table(id integer)")).getSQLState());
+                assertEquals("42501",assertThrows(java.sql.SQLException.class,()->statement.execute("DELETE FROM ops.audit_event WHERE false")).getSQLState());
+                assertEquals("42501",assertThrows(java.sql.SQLException.class,()->statement.execute("ALTER TABLE iam.user_account ADD COLUMN forbidden_runtime_column text")).getSQLState());
+            } finally {statement.execute("RESET ROLE");}
+        }
+    }
     private UUID admin() {
         return members.createAdmin(UUID.randomUUID()+"@example.test","CI 관리자","not-a-login-hash").id();
     }

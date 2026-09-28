@@ -7,8 +7,14 @@ spring:
       connection-timeout: 10000
 server:
   port: ${PORT:18081}
-  forward-headers-strategy: framework
+  # Only loopback Nginx may provide X-Forwarded-*; never interpret client Forwarded.
+  forward-headers-strategy: native
   tomcat:
+    remoteip:
+      internal-proxies: '127\.0\.0\.1|::1|0:0:0:0:0:0:0:1'
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+      host-header: X-Forwarded-Host
     threads:
       max: 30
       min-spare: 2

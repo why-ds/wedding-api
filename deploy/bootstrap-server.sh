@@ -17,7 +17,7 @@ nginx -t
 if ss -H -ltn '( sport = :8088 or sport = :18081 )' | grep -q .; then
     echo 'Port 8088 or 18081 is already in use; nothing was changed.' >&2; exit 1
 fi
-role_exists=$(sudo -u postgres psql -X -d postgres -Atc "SELECT count(*) FROM pg_roles WHERE rolname='wedding_app'")
+role_exists=$(sudo -u postgres psql -X -d postgres -Atc "SELECT count(*) FROM pg_roles WHERE rolname IN ('wedding_app','wedding_migrator')")
 db_exists=$(sudo -u postgres psql -X -d postgres -Atc "SELECT count(*) FROM pg_database WHERE datname='wedding'")
 [[ $role_exists == 0 && $db_exists == 0 ]] || { echo 'Existing wedding role/database found; refusing to overwrite.' >&2; exit 1; }
 extensions=$(sudo -u postgres psql -X -d postgres -Atc "SELECT count(*) FROM pg_available_extensions WHERE name IN ('pg_trgm','btree_gist')")
@@ -34,25 +34,37 @@ if [[ ! -x /usr/lib/jvm/java-21-openjdk-amd64/bin/java ]]; then
     trap - EXIT
 fi
 getent passwd wedding-api >/dev/null || useradd --system --home-dir /var/lib/wedding-api --shell /usr/sbin/nologin wedding-api
+getent passwd wedding-migrate >/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin wedding-migrate
 install -d -o wedding-api -g wedding-api -m 0750 /var/lib/wedding-api
 install -d -o "$deploy_user" -g wedding-api -m 2750 /opt/wedding-api /opt/wedding-api/releases
 install -d -o "$deploy_user" -g www-data -m 2755 /var/www/wedding-web /var/www/wedding-web/releases
 
 db_password=$(openssl rand -hex 32)
+migration_password=$(openssl rand -hex 32)
 admin_password=$(openssl rand -hex 24)
 # Generated hexadecimal values are sent over stdin, never process arguments or logs.
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d postgres <<SQL
 CREATE ROLE wedding_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$db_password';
-CREATE DATABASE wedding OWNER wedding_app;
+CREATE ROLE wedding_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$migration_password';
+CREATE DATABASE wedding OWNER wedding_migrator;
 REVOKE CONNECT, TEMPORARY ON DATABASE wedding FROM PUBLIC;
-GRANT CONNECT, TEMPORARY ON DATABASE wedding TO wedding_app;
+GRANT CONNECT ON DATABASE wedding TO wedding_app;
 SQL
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d wedding -c 'REVOKE CREATE ON SCHEMA public FROM PUBLIC;'
+cat > /etc/wedding-migrate.env <<ENV
+DB_URL=jdbc:postgresql://127.0.0.1:5432/wedding
+DB_USERNAME=wedding_migrator
+DB_PASSWORD=$migration_password
+WEDDING_MIGRATION_MODE=synthetic-preview
+ENV
+chmod 600 /etc/wedding-migrate.env
 cat > /etc/wedding-api.env <<ENV
 SPRING_PROFILES_ACTIVE=postgres,preview
 PORT=18081
 DB_URL=jdbc:postgresql://127.0.0.1:5432/wedding
 DB_USERNAME=wedding_app
 DB_PASSWORD=$db_password
+DB_MIGRATIONS_ENABLED=false
 SESSION_COOKIE_SECURE=false
 WEDDING_ADMIN_BOOTSTRAP_ENABLED=true
 ADMIN_EMAIL=admin@allaboutwedding.local
@@ -66,13 +78,20 @@ Password: $admin_password
 Use test data only on this temporary HTTP preview.
 LOGIN
 chmod 600 /etc/wedding-initial-login.txt
-unset db_password admin_password
+unset db_password migration_password admin_password
 
 install -o root -g root -m 0644 "$source_dir/wedding-api.service" /etc/systemd/system/wedding-api.service
+install -o root -g root -m 0644 "$source_dir/wedding-migrate.service" /etc/systemd/system/wedding-migrate.service
+install -d -o postgres -g postgres -m 0700 /var/backups/wedding
+install -d -o root -g root -m 0755 /usr/local/lib/wedding
+install -o root -g root -m 0755 "$source_dir/backup-database.sh" /usr/local/lib/wedding/backup-database.sh
+install -o root -g root -m 0644 "$source_dir/wedding-backup.service" /etc/systemd/system/wedding-backup.service
+install -o root -g root -m 0644 "$source_dir/wedding-backup.timer" /etc/systemd/system/wedding-backup.timer
 systemctl daemon-reload
 systemctl enable wedding-api.service
+systemctl enable --now wedding-backup.timer
 sudoers_tmp=$(mktemp)
-printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart wedding-api.service, /usr/bin/systemctl stop wedding-api.service\n' "$deploy_user" > "$sudoers_tmp"
+printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart wedding-api.service, /usr/bin/systemctl stop wedding-api.service, /usr/bin/systemctl start wedding-migrate.service\n' "$deploy_user" > "$sudoers_tmp"
 chmod 440 "$sudoers_tmp"
 visudo -cf "$sudoers_tmp"
 install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/wedding-deploy

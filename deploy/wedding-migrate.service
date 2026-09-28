@@ -1,0 +1,20 @@
+[Unit]
+Description=All About Wedding offline database migration
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=wedding-migrate
+Group=wedding-api
+EnvironmentFile=/etc/wedding-migrate.env
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Xms64m -Xmx256m -jar /opt/wedding-api/current/app.jar --migrate
+TimeoutStartSec=180
+MemoryMax=384M
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

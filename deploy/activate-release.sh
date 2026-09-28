@@ -32,6 +32,9 @@ rollback() {
 trap rollback ERR
 ln -sfn "$destination" "$base/current.next"
 mv -Tf "$base/current.next" "$base/current"
+if [[ -f /etc/systemd/system/wedding-migrate.service ]]; then
+    sudo -n /usr/bin/systemctl start wedding-migrate.service
+fi
 sudo -n /usr/bin/systemctl restart wedding-api.service
 healthy=false
 for attempt in $(seq 1 45); do
@@ -45,4 +48,6 @@ curl --silent --show-error --fail --max-time 15 http://127.0.0.1:18081/api/v1/se
     -H 'Content-Type: application/json' \
     --data '{"date":"2027-02-27","time":"12:00","guests":250,"region":"","style":"","query":"","budget":null,"beverages":false,"sort":"price"}' >/dev/null
 trap - ERR
+python3 "$upload/prune-releases.py" "$base/releases" --protect "$release" --protect "${previous##*/}" || echo 'Release cleanup failed; inspect disk usage.' >&2
+python3 "$upload/prune-releases.py" "$(dirname "$upload")" --protect "$release" --protect "${previous##*/}" || echo 'Upload cleanup failed; inspect disk usage.' >&2
 echo "API release $release is healthy."

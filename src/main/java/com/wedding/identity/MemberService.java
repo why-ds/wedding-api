@@ -50,7 +50,7 @@ public class MemberService {
     public Set<String> favorites(UUID id) { get(id); return members.favorites(id); }
     public Set<String> favorite(UUID id,UUID listing,boolean saved) {
         get(id);
-        if (saved && venues.findAll().stream().noneMatch(v->v.id().equals(listing.toString())))
+        if (saved && !venues.existsPublished(listing))
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,"저장할 수 있는 업체를 찾지 못했습니다.");
         members.favorite(id,listing,saved); return members.favorites(id);
     }

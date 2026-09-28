@@ -8,6 +8,6 @@ spring:
       ddl-auto: none
     open-in-view: false
   flyway:
-    enabled: true
+    enabled: ${DB_MIGRATIONS_ENABLED:true}
     # Development database only: V900 adds clearly marked synthetic venues.
     locations: classpath:db/migration,classpath:db/demo

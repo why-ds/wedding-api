@@ -25,8 +25,8 @@ sudo bash deploy/bootstrap-server.sh
 
 - 8088·18081 포트 충돌, 기존 wedding DB·계정·설정, PostgreSQL 확장 설치 가능 여부를 먼저 확인합니다.
 - 필요하면 Java 21 JRE를 추가하고 기존 `java` 기본 경로를 복원합니다. 패키지 설치 중 기존 서비스 자동 재시작은 요청하지 않습니다.
-- `wedding_app` DB 계정과 별도 `wedding` DB를 생성합니다. lunch DB를 수정하지 않습니다. 계정은 슈퍼유저·DB 생성·역할 생성 권한이 없습니다. 미리보기에서는 마이그레이션을 위해 wedding DB 소유자 권한을 사용합니다.
-- 비밀번호를 임의 생성해 root만 읽을 수 있는 `/etc/wedding-api.env`, `/etc/wedding-initial-login.txt`에 보관합니다.
+- `wedding_app` DB 계정과 별도 `wedding` DB를 생성합니다. lunch DB를 수정하지 않습니다. 계정은 슈퍼유저·DB 생성·역할 생성 권한이 없습니다. DB 소유자는 별도 wedding_migrator이며, 웹 프로세스의 wedding_app에는 데이터 읽기/쓰기만 부여합니다. 감사 로그는 수정·삭제할 수 없습니다.
+- 비밀번호를 임의 생성해 root만 읽을 수 있는 `/etc/wedding-api.env`, `/etc/wedding-migrate.env`, `/etc/wedding-initial-login.txt`에 보관합니다.
 - API 전용 OS 계정·systemd 서비스·배포 폴더를 만듭니다. 아직 JAR가 없으므로 API를 시작하지 않습니다.
 - Nginx에 8088 미리보기 사이트를 추가하고 `nginx -t` 성공 후 reload합니다. 기존 k-lunch 사이트 설정은 수정하지 않습니다.
 
@@ -64,7 +64,7 @@ WEDDING_DEPLOY_ENABLED = true
 
 각 저장소 Actions에서 해당 workflow를 선택하고 **Run workflow → main**을 실행합니다. API가 성공한 뒤 웹을 실행하면 확인하기 편합니다. 이후 main에 push하면 검증 후 자동 배포됩니다. DB 비밀번호나 관리자 비밀번호는 GitHub에 등록할 필요가 없습니다.
 
-- API: 업로드 체크섬 확인 → 새 릴리스 폴더 → 링크 전환 → **wedding-api.service만 재시작** → DB 연결·검색 API 확인.
+- API: 업로드 체크섬 확인 → 새 릴리스 폴더 → 링크 전환 → 별도 wedding-migrate.service로 DB 마이그레이션 → **wedding-api.service만 재시작** → DB 연결·검색 API 확인.
 - API 시작에 실패하면 이전 JAR 링크로 복구하고 오류를 반환합니다. **이미 적용된 SQL은 자동 롤백하지 않습니다.** 향후 마이그레이션은 이전 앱과 호환되도록 추가하고 중요한 변경 전에 DB 백업을 확보해야 합니다.
 - 웹: 체크섬 확인 → 새 정적 파일 폴더 → 링크 전환. Nginx 재시작과 Node 개발 서버가 필요 없습니다.
 - 같은 커밋의 같은 결과물은 재배포할 수 있습니다. 같은 커밋 ID인데 결과물이 다르면 덮어쓰지 않습니다.
@@ -102,7 +102,7 @@ df -h /
 
 API는 JVM heap 384MiB, 서비스 메모리 상한 768MiB, DB 커넥션 최대 4개로 시작합니다. 이는 초기 제한이지 동시 운영 안정성 보장이 아닙니다. 부하·실제 메모리를 보고 조정해야 하며, OOM 재시작이 반복되면 제한을 무작정 올리지 말고 서버 용량을 점검합니다.
 
-릴리스와 업로드 자료가 누적됩니다. `/opt/wedding-api/releases`, `/var/www/wedding-web/releases`, `~/wedding-deploy` 용량을 확인하고 현재·복구용 버전을 보존하는 정리 정책을 마련하세요. DB 백업·보존 정책도 실제 데이터를 받기 전에 필요합니다.
+배포 성공 후 최신 5개 릴리스와 활성·직전 릴리스를 보존하고 나머지 SHA 이름 디렉터리를 정리합니다. 웹은 바로 이전 빌드의 자산만 계승합니다. wedding-backup.timer가 매일 wedding DB를 로컬에 백업하며 최근 약 8일분을 보관합니다. 같은 디스크의 백업은 서버·디스크 전체 장애를 막지 못하므로 실제 운영 전 별도 저장소 복제와 복원 훈련이 필요합니다.
 
 기존 k-lunch workflow에는 `pkill -f 'java -jar'`가 있습니다. 웨딩 실행 명령은 Java 경로와 JVM 옵션을 명시해 현재 패턴에 매치되지 않게 했지만, k-lunch도 자체 systemd 서비스만 재시작하도록 개선해야 합니다. 두 앱을 포괄하는 종료 명령을 추가하지 마세요.
 

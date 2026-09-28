@@ -12,7 +12,18 @@ public class PostgresVenueRepository implements VenueRepository {
     private final JdbcClient jdbc;
     public PostgresVenueRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
     @Override public List<Venue> findAll() {
-        return jdbc.sql("SELECT * FROM search.demo_venue_projection ORDER BY id").query((rs, row) ->
+        return candidates("","","");
+    }
+    @Override public boolean existsPublished(java.util.UUID id) {
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM search.demo_venue_projection WHERE id=:id)").param("id",id).query(Boolean.class).single();
+    }
+    @Override public List<Venue> candidates(String region,String style,String query) {
+        return jdbc.sql("""
+            SELECT * FROM search.demo_venue_projection
+            WHERE (:region='' OR region=:region) AND (:style='' OR style=:style)
+              AND (:query='' OR position(:query IN name||hall||region)>0)
+            ORDER BY id LIMIT 501
+            """).param("region",region).param("style",style).param("query",query).query((rs, row) ->
             new Venue(rs.getString("id"), rs.getString("name"), rs.getString("hall"), rs.getString("region"),
                 rs.getString("address"), rs.getString("style"), rs.getInt("capacity"), rs.getInt("guarantee"),
                 rs.getBigDecimal("meal"), rs.getBigDecimal("rental"), rs.getBigDecimal("flowers"),
