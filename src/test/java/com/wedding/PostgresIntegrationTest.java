@@ -36,6 +36,7 @@ class PostgresIntegrationTest {
     @Autowired VenueRepository venues;
     @Autowired JdbcClient jdbc;
     @Autowired PublicationRepository publications;
+    @Autowired DemoCatalogRepository demoCatalog;
     @Autowired javax.sql.DataSource dataSource;
     @Test @org.springframework.transaction.annotation.Transactional
     void syntheticFixtureRemainsVisibleAfterRecheckAndFiltersRunInDatabase() {
@@ -212,5 +213,29 @@ class PostgresIntegrationTest {
         assertTrue(publications.get(draft.id()).isEmpty());
         assertEquals(0,jdbc.sql("SELECT count(*) FROM catalog.listing WHERE slug=:slug").param("slug","catalog-"+draft.id()).query(Integer.class).single());
         assertEquals(0,jdbc.sql("SELECT count(*) FROM ops.audit_event WHERE target_id=:id AND action='CATALOG_PUBLISH'").param("id",draft.id()).query(Integer.class).single());
+    }
+    @Test void allTwentySamplesArePersistentAndIsolatedFromRealListingsAndFavorites() throws Exception {
+        assertEquals(20,demoCatalog.list(0,"","").total());
+        assertTrue(demoCatalog.list(0,"","").persistent());
+        assertTrue(demoCatalog.list(1,"","").items().isEmpty());
+        for(var category:CatalogData.Category.values()){
+            var page=demoCatalog.list(0,category.name(),"");assertEquals(2,page.total());
+            for(var e:page.items()){
+                assertEquals(2,e.data().details().quotes().size());assertEquals(1,e.data().details().photos().size());
+                assertTrue(e.data().organizationName().contains("가상"));assertTrue(e.data().publicPhone().isEmpty());
+                assertTrue(publications.findPublished(e.id()).isEmpty());assertFalse(favoriteListings.existsPublished(e.id()));
+                assertTrue(demoCatalog.get(e.id()).isPresent());
+            }
+        }
+        assertEquals(10,demoCatalog.list(0,"","강남").total());
+        assertEquals(0,jdbc.sql("SELECT count(*) FROM ops.catalog_draft WHERE data->>'externalKey' LIKE 'demo-%'").query(Integer.class).single());
+        var id=demoCatalog.list(0,"MAKEUP","").items().getFirst().id();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/demo/directory/"+id))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.demo").value(true))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.details.quotes.length()").value(2));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/directory/"+id)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+        var actor=members.create(UUID.randomUUID()+"@example.test","체험 격리","hash").id();
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,()->memberService.favorite(actor,id,true));
     }
 }
