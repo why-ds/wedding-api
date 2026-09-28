@@ -108,4 +108,4 @@ systemctl reload nginx
 echo 'Setup complete. No application artifact has been deployed yet.'
 echo 'Next: configure GitHub preview secrets, enable deployment, run each workflow.'
 echo 'View the generated admin password locally with: sudo cat /etc/wedding-initial-login.txt'
-echo 'Keep port 18081 and PostgreSQL private. Allow port 8088 only from your own IP.'
+echo 'Ports 8088 and 18081 stay on loopback. Use an SSH tunnel until HTTPS is configured.'

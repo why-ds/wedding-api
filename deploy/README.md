@@ -2,7 +2,7 @@
 
 대상: 기존 k-lunch가 실행 중인 Ubuntu 24.04 x86_64, PostgreSQL 16, Nginx 서버. Docker는 사용하지 않습니다. 아래 `SERVER_IP`는 본인의 서버 공인 IP로 바꿔 입력하세요. 실제 주소는 저장소에 기록하지 않고 GitHub Secret으로 관리합니다.
 
-이번 구성은 **영구 DB를 사용하는 개발 미리보기**입니다. 예식장 가격·업체는 가상 자료이고, 관리자 등록 자료는 비공개 초안입니다. HTTP이므로 보안 그룹을 본인 IP로 제한하고 테스트용 계정·데이터만 사용합니다. 실제 회원을 받기 전 도메인·HTTPS·계정 운영 기능을 준비해야 합니다.
+이번 구성은 **영구 DB를 사용하는 개발 미리보기**입니다. 예식장 가격·업체는 가상 자료이고, 관리자 등록 자료는 비공개 초안입니다. HTTP 미리보기는 서버 loopback에만 바인딩하고 SSH 터널로 접속합니다. 테스트용 계정·데이터만 사용합니다. 실제 회원을 받기 전 도메인·HTTPS·계정 운영 기능을 준비해야 합니다.
 
 ## 1. GitHub 검증 결과 먼저 확인
 
@@ -28,7 +28,7 @@ sudo bash deploy/bootstrap-server.sh
 - `wedding_app` DB 계정과 별도 `wedding` DB를 생성합니다. lunch DB를 수정하지 않습니다. 계정은 슈퍼유저·DB 생성·역할 생성 권한이 없습니다. DB 소유자는 별도 wedding_migrator이며, 웹 프로세스의 wedding_app에는 데이터 읽기/쓰기만 부여합니다. 감사 로그는 수정·삭제할 수 없습니다.
 - 비밀번호를 임의 생성해 root만 읽을 수 있는 `/etc/wedding-api.env`, `/etc/wedding-migrate.env`, `/etc/wedding-initial-login.txt`에 보관합니다.
 - API 전용 OS 계정·systemd 서비스·배포 폴더를 만듭니다. 아직 JAR가 없으므로 API를 시작하지 않습니다.
-- Nginx에 8088 미리보기 사이트를 추가하고 `nginx -t` 성공 후 reload합니다. 기존 k-lunch 사이트 설정은 수정하지 않습니다.
+- Nginx에 loopback 8088 미리보기 사이트를 추가하고 `nginx -t` 성공 후 reload합니다. 기존 k-lunch 사이트 설정은 수정하지 않습니다.
 
 기존 이름이 있으면 덮어쓰지 않고 중단합니다. 중간 실패 후에는 오류 원인을 확인하고 이어서 복구해야 하므로 DB나 설정 파일을 임의 삭제하고 재실행하지 마세요.
 
@@ -71,10 +71,16 @@ WEDDING_DEPLOY_ENABLED = true
 
 ## 5. AWS 포트 설정과 접속
 
-EC2의 보안 그룹 인바운드에 **사용자 지정 TCP / 8088 / 소스 내 IP**를 추가합니다. API 18081과 DB 5432는 외부에 열지 않습니다. 서버 UFW가 활성이라면 UFW에서도 본인 IP의 8088 접근을 별도로 허용해야 합니다. 기존 SSH·k-lunch 규칙은 유지합니다.
+8088·18081·5432를 외부에 추가로 열지 않습니다. 기존 SSH·k-lunch 규칙은 유지합니다. PC에서 아래 터널을 실행한 채 브라우저를 엽니다. 키 경로와 SERVER_IP는 본인 값으로 바꾸세요.
 
-- 회원 화면: http://SERVER_IP:8088/
-- 관리자: http://SERVER_IP:8088/admin
+```bash
+ssh -i /path/to/key.pem -N -L 127.0.0.1:18088:127.0.0.1:8088 ubuntu@SERVER_IP
+```
+
+이 주소는 앱이 PC에서 실행된다는 의미가 아닙니다. AWS의 Nginx·Spring·PostgreSQL에 암호화된 SSH 연결을 통해 접속합니다. 공개 접속은 별도 서브도메인의 A 레코드를 서버에 연결하고 HTTPS Nginx 사이트를 추가한 뒤 활성화합니다.
+
+- 회원 화면: http://127.0.0.1:18088/
+- 관리자: http://127.0.0.1:18088/admin
 - 초기 관리자 이메일: `admin@allaboutwedding.local`
 
 비밀번호는 서버에서 확인합니다. 이 파일 내용이나 비밀번호가 보이는 화면은 공유하지 마세요.
