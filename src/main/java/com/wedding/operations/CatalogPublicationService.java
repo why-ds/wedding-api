@@ -12,6 +12,7 @@ public class CatalogPublicationService {
     private final CatalogIntakeService intake;
     public CatalogPublicationService(PublicationRepository publications,CatalogDraftRepository drafts,CatalogIntakeService intake){this.publications=publications;this.drafts=drafts;this.intake=intake;}
     public PublicationRepository.Page browse(int page,String category,String query){return list(page,category,query,true);}
+    public PublicationRepository.Entry detail(UUID listing){return publications.findPublished(listing).orElseThrow(CatalogIntakeService::missing);}
     @PreAuthorize("isAuthenticated()")
     public PublicationRepository.Page saved(UUID actor,int page,String category,String query){
         validate(page,category,query);return publications.list(page,category,query.strip(),true,actor);
@@ -34,6 +35,7 @@ public class CatalogPublicationService {
         var current=drafts.get(draft);
         if(current.version()!=version||!current.status().equals("DRAFT"))throw CatalogIntakeService.stale();
         var data=intake.checked(current.data());
+        data.details().validate(data.category(),true);
         if(data.sourceUrl().isBlank())throw CatalogIntakeService.bad("공개 게시 전에 초안에 출처 URL을 입력해 주세요.");
         return publications.publish(actor,draft,version,publicationVersion,data,reviewedOn);
     }

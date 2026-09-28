@@ -19,11 +19,22 @@ class PublicationSecurityTest {
     @Autowired MemberRepository members;
     @Autowired CatalogDraftRepository drafts;
     @Test void publicDirectoryIsBoundedAndDemoDoesNotPretendToBePersistent() throws Exception {
+        mvc.perform(get("/api/v1/directory/"+UUID.randomUUID())).andExpect(status().isNotFound());
         mvc.perform(get("/api/v1/me/directory")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/directory")).andExpect(status().isOk()).andExpect(jsonPath("$.persistent").value(false)).andExpect(jsonPath("$.total").value(0));
         mvc.perform(get("/api/v1/directory?page=-1")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/directory?category=UNKNOWN")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/directory").param("query","a".repeat(101))).andExpect(status().isBadRequest());
+    }
+    @Test void nestedDetailWritesRequireValidAmountsRightsAndAdminCsrf() throws Exception {
+        var actor=members.createAdmin(UUID.randomUUID()+"@example.test","관리자","hash").id();
+        var details=CatalogDetailsTest.fixture();
+        var data=new CatalogData("detail-"+UUID.randomUUID(),"CI 업체","본점",CatalogData.Category.VENUE,"서울","주소","","https://example.test",details);
+        var json=tools.jackson.databind.json.JsonMapper.builder().build();var body=json.writeValueAsString(data);
+        mvc.perform(post("/api/v1/admin/catalog").with(user(actor.toString())).contentType("application/json").content(body)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/admin/catalog").with(user(actor.toString())).with(csrf()).contentType("application/json").content(body.replace("15000000","-1"))).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/admin/catalog").with(user(actor.toString())).with(csrf()).contentType("application/json").content(body.replace("\"rightsConfirmed\":true","\"rightsConfirmed\":false"))).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/admin/catalog").with(user(actor.toString())).with(csrf()).contentType("application/json").content(body)).andExpect(status().isCreated()).andExpect(jsonPath("$.data.details.parking.freeMinutes").value(120));
     }
     @Test void databaseStatusIsRestrictedToCurrentAdministrators() throws Exception {
         mvc.perform(get("/api/v1/admin/storage")).andExpect(status().isUnauthorized());

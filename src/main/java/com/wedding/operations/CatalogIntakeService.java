@@ -32,7 +32,7 @@ public class CatalogIntakeService {
     public List<UUID> commit(UUID actor,UUID ticket){return repository.commit(actor,ticket);}
     CatalogData checked(CatalogData raw) {
         if(raw==null)throw bad("업체 데이터를 입력해 주세요.");var data=raw.normalized();var issues=issues(data);
-        if(!issues.isEmpty())throw bad(String.join(" / ",issues));return data;
+        if(!issues.isEmpty())throw bad(String.join(" / ",issues));data.details().validate(data.category(),false);return data;
     }
     private List<String> issues(CatalogData data) {
         var errors=new ArrayList<String>();

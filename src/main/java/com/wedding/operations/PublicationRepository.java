@@ -9,6 +9,7 @@ public interface PublicationRepository {
     default Page list(int page,String category,String query,boolean publishedOnly){return list(page,category,query,publishedOnly,null);}
     Page list(int page,String category,String query,boolean publishedOnly,UUID favoriteUser);
     Optional<Entry> get(UUID draft);
+    Optional<Entry> findPublished(UUID listing);
     Entry publish(UUID actor,UUID draft,long draftVersion,Long publicationVersion,CatalogData data,LocalDate reviewedOn);
     Entry withdraw(UUID actor,UUID draft,long publicationVersion);
 }

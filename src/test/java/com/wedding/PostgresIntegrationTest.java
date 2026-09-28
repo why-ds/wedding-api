@@ -177,4 +177,40 @@ class PostgresIntegrationTest {
             assertThrows(IllegalStateException.class,()->DatabaseIdentity.require(connection,"wedding_app"));
         }
     }
+    @Test void detailsAreApprovedAtomicallyAndHiddenWhenWithdrawnOrBranchInactive() throws Exception {
+        var actor=admin();var basic=publishable();var detail=CatalogDetailsTest.fixture();
+        var data=new CatalogData(basic.externalKey(),basic.organizationName(),basic.branchName(),CatalogData.Category.VENUE,basic.region(),basic.address(),"",basic.sourceUrl(),detail);
+        var draft=drafts.create(actor,data);
+        var first=publications.publish(actor,draft.id(),0,null,data,java.time.LocalDate.now());
+        var url="/api/v1/directory/"+first.listingId();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(url))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.details.parking.spaces").value(300))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.details.quotes[0].serviceDate").value("2027-02-27"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.listing.externalKey").doesNotExist())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.draftId").doesNotExist());
+        assertEquals(1,jdbc.sql("SELECT count(*) FROM catalog.reference_quote WHERE listing_id=:id AND start_time='12:00' AND amount=15000000").param("id",first.listingId()).query(Integer.class).single());
+        assertEquals(1,jdbc.sql("SELECT count(*) FROM catalog.reference_photo WHERE listing_id=:id").param("id",first.listingId()).query(Integer.class).single());
+        var empty=new CatalogData(data.externalKey(),data.organizationName(),data.branchName(),data.category(),data.region(),data.address(),"",data.sourceUrl());
+        var revised=drafts.update(actor,draft.id(),0,empty);
+        assertEquals(1,publications.findPublished(first.listingId()).orElseThrow().data().details().photos().size());
+        var second=publications.publish(actor,draft.id(),revised.version(),first.version(),empty,java.time.LocalDate.now());
+        assertEquals(0,jdbc.sql("SELECT count(*) FROM catalog.reference_quote WHERE listing_id=:id").param("id",first.listingId()).query(Integer.class).single());
+        assertNull(publications.findPublished(first.listingId()).orElseThrow().data().details().parking().spaces());
+        jdbc.sql("UPDATE partner.branch SET status='TEMP_CLOSED' WHERE id=(SELECT branch_id FROM catalog.listing WHERE id=:id)").param("id",first.listingId()).update();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(url)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+        jdbc.sql("UPDATE partner.branch SET status='ACTIVE' WHERE id=(SELECT branch_id FROM catalog.listing WHERE id=:id)").param("id",first.listingId()).update();
+        publications.withdraw(actor,draft.id(),second.version());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(url)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+    }
+    @Test void invalidDetailProjectionRollsBackTheWholePublication(){
+        var actor=admin();var basic=publishable();
+        var invalid=new CatalogDetails("",new CatalogDetails.Parking(-1,null,"",null,"",""),null,null);
+        var data=new CatalogData(basic.externalKey(),basic.organizationName(),basic.branchName(),basic.category(),basic.region(),basic.address(),"",basic.sourceUrl(),invalid);
+        var draft=drafts.create(actor,data);
+        assertThrows(org.springframework.dao.DataAccessException.class,()->publications.publish(actor,draft.id(),0,null,data,java.time.LocalDate.now()));
+        assertTrue(publications.get(draft.id()).isEmpty());
+        assertEquals(0,jdbc.sql("SELECT count(*) FROM catalog.listing WHERE slug=:slug").param("slug","catalog-"+draft.id()).query(Integer.class).single());
+        assertEquals(0,jdbc.sql("SELECT count(*) FROM ops.audit_event WHERE target_id=:id AND action='CATALOG_PUBLISH'").param("id",draft.id()).query(Integer.class).single());
+    }
 }

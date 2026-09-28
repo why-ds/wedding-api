@@ -15,11 +15,14 @@ public record CatalogData(
     @NotBlank @Size(max=60) String region,
     @NotBlank @Size(max=250) String address,
     @Size(max=30) @Pattern(regexp="[0-9+() -]*") String publicPhone,
-    @Size(max=1000) String sourceUrl
+    @Size(max=1000) String sourceUrl,
+    @jakarta.validation.Valid CatalogDetails details
 ) {
+    public CatalogData { details=details==null?CatalogDetails.empty():details; }
+    public CatalogData(String externalKey,String organizationName,String branchName,Category category,String region,String address,String publicPhone,String sourceUrl){this(externalKey,organizationName,branchName,category,region,address,publicPhone,sourceUrl,null);}
     public enum Category { VENUE, STUDIO, DRESS, MAKEUP, JEWELRY, HANBOK, SUIT, WEDDING_PHOTO, IPHONE_SNAP, WEDDING_VIDEO }
     private static String clean(String value) { return value==null?"":value.strip().replaceAll("\\s+"," "); }
-    public CatalogData normalized() { return new CatalogData(clean(externalKey).toLowerCase(Locale.ROOT),clean(organizationName),clean(branchName),category,clean(region),clean(address),clean(publicPhone),clean(sourceUrl)); }
+    public CatalogData normalized() { return new CatalogData(clean(externalKey).toLowerCase(Locale.ROOT),clean(organizationName),clean(branchName),category,clean(region),clean(address),clean(publicPhone),clean(sourceUrl),details); }
     public String identityKey() { return sha((organizationName+"\u001f"+branchName+"\u001f"+category+"\u001f"+address).toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)); }
     public static String sha(byte[] bytes) {
         try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}

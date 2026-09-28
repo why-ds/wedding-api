@@ -30,6 +30,7 @@ public class PostgresPublicationRepository implements PublicationRepository {
         return new Page(rows,total,page,true);
     }
     public Optional<Entry> get(UUID draft){return jdbc.sql("SELECT p.*,l.status "+FROM+" WHERE p.draft_id=:id").param("id",draft).query(mapper).optional();}
+    public Optional<Entry> findPublished(UUID listing){return jdbc.sql("SELECT p.*,l.status "+FROM+" WHERE p.listing_id=:id AND l.status='PUBLISHED' AND b.status='ACTIVE' AND o.status='ACTIVE'").param("id",listing).query(mapper).optional();}
     private void lockDraft(UUID draft){
         jdbc.sql("SELECT id FROM ops.catalog_draft WHERE id=:id FOR UPDATE").param("id",draft).query(UUID.class).optional().orElseThrow(CatalogIntakeService::missing);
     }
@@ -76,6 +77,7 @@ public class PostgresPublicationRepository implements PublicationRepository {
             approved_data=excluded.approved_data,draft_version=excluded.draft_version,reviewed_by=excluded.reviewed_by,
             reviewed_on=excluded.reviewed_on,version=ops.catalog_publication.version+1,updated_at=now(),published_at=now()
             """).param("draft",draft).param("listing",listing).param("source",source).param("data",snapshot).param("draftVersion",draftVersion).param("actor",actor).param("reviewed",reviewedOn).update();
+        writeDetails(listing,data.details());
         audit(actor,"CATALOG_PUBLISH",draft);
         return get(draft).orElseThrow();
     }
@@ -87,6 +89,35 @@ public class PostgresPublicationRepository implements PublicationRepository {
         jdbc.sql("UPDATE ops.catalog_publication SET version=version+1,updated_at=now() WHERE draft_id=:id").param("id",draft).update();
         audit(actor,"CATALOG_WITHDRAW",draft);
         return get(draft).orElseThrow();
+    }
+    private void writeDetails(UUID listing,CatalogDetails details){
+        var p=details.parking();
+        jdbc.sql("""
+            INSERT INTO catalog.listing_detail(listing_id,description,parking_spaces,parking_free_minutes,parking_fee_description,valet_available,parking_access_description,shuttle_description)
+            VALUES(:id,:description,:spaces,:minutes,:fee,:valet,:access,:shuttle)
+            ON CONFLICT(listing_id) DO UPDATE SET description=excluded.description,parking_spaces=excluded.parking_spaces,
+            parking_free_minutes=excluded.parking_free_minutes,parking_fee_description=excluded.parking_fee_description,
+            valet_available=excluded.valet_available,parking_access_description=excluded.parking_access_description,shuttle_description=excluded.shuttle_description
+            """).param("id",listing).param("description",details.description()).param("spaces",p.spaces()).param("minutes",p.freeMinutes())
+            .param("fee",p.feeDescription()).param("valet",p.valetAvailable()).param("access",p.accessDescription()).param("shuttle",p.shuttleDescription()).update();
+        jdbc.sql("UPDATE partner.branch SET parking_spaces=:spaces WHERE id=(SELECT branch_id FROM catalog.listing WHERE id=:id)").param("spaces",p.spaces()).param("id",listing).update();
+        jdbc.sql("DELETE FROM catalog.reference_photo WHERE listing_id=:id").param("id",listing).update();
+        for(int i=0;i<details.photos().size();i++){
+            var photo=details.photos().get(i);
+            jdbc.sql("INSERT INTO catalog.reference_photo VALUES(:id,:position,:url,:caption,:credit,:source,:rights,:confirmed)")
+                .param("id",listing).param("position",i).param("url",photo.url()).param("caption",photo.caption()).param("credit",photo.credit())
+                .param("source",photo.sourceUrl()).param("rights",photo.rights().name()).param("confirmed",photo.rightsConfirmed()).update();
+        }
+        jdbc.sql("DELETE FROM catalog.reference_quote WHERE listing_id=:id").param("id",listing).update();
+        for(int i=0;i<details.quotes().size();i++){
+            var q=details.quotes().get(i);
+            jdbc.sql("""
+                INSERT INTO catalog.reference_quote(listing_id,position,title,service_date,start_time,guests,minimum_guests,amount,tax_status,included,excluded,conditions,source_url,checked_on,valid_until)
+                VALUES(:id,:position,:title,:date,:time,:guests,:minimum,:amount,:tax,:included,:excluded,:conditions,:source,:checked,:until)
+                """).param("id",listing).param("position",i).param("title",q.title()).param("date",q.serviceDate()).param("time",q.startTime())
+                .param("guests",q.guests()).param("minimum",q.minimumGuests()).param("amount",q.amount()).param("tax",q.taxStatus().name())
+                .param("included",q.included()).param("excluded",q.excluded()).param("conditions",q.conditions()).param("source",q.sourceUrl()).param("checked",q.checkedOn()).param("until",q.validUntil()).update();
+        }
     }
     private void audit(UUID actor,String action,UUID draft){
         jdbc.sql("INSERT INTO ops.audit_event(actor_user_id,action,target_type,target_id,redacted_changes) VALUES(:actor,:action,'CATALOG_DRAFT',:id,'{}')")

@@ -16,6 +16,9 @@ public class CatalogPublicationController {
     public record Version(@NotNull @Min(0) Long version){}
     // Explicit public projection excludes internal draft keys, reviewer IDs and audit data.
     public record PublicEntry(UUID id,String organizationName,String branchName,String category,String region,String address,String publicPhone,String sourceUrl,LocalDate reviewedOn){}
+    public record PublicDetail(PublicEntry listing,CatalogDetails details,String timezone){}
+    private PublicEntry entry(PublicationRepository.Entry e){return new PublicEntry(e.listingId(),e.data().organizationName(),e.data().branchName(),e.data().category().name(),e.data().region(),e.data().address(),e.data().publicPhone(),e.data().sourceUrl(),e.reviewedOn());}
+    @GetMapping("/directory/{id}") public PublicDetail detail(@PathVariable UUID id){var e=service.detail(id);return new PublicDetail(entry(e),e.data().details(),"Asia/Seoul");}
     @GetMapping("/directory") public Map<String,Object> browse(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String category,@RequestParam(defaultValue="") String query){
         var result=service.browse(page,category,query);
         return response(result);
@@ -25,7 +28,7 @@ public class CatalogPublicationController {
         return response(service.saved(actor,page,category,query));
     }
     private Map<String,Object> response(PublicationRepository.Page result){
-        var items=result.items().stream().map(e->new PublicEntry(e.listingId(),e.data().organizationName(),e.data().branchName(),e.data().category().name(),e.data().region(),e.data().address(),e.data().publicPhone(),e.data().sourceUrl(),e.reviewedOn())).toList();
+        var items=result.items().stream().map(this::entry).toList();
         return Map.of("items",items,"total",result.total(),"page",result.page(),"persistent",result.persistent());
     }
     @GetMapping("/admin/publications") public PublicationRepository.Page list(@RequestParam(defaultValue="0") int page){return service.administration(page);}
