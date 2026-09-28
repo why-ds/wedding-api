@@ -4,7 +4,7 @@
 
 ## DNS
 
-루트 도메인(`@`)의 A 레코드를 `SERVER_IP`로 연결한다. IPv6를 구성하지 않았다면 다른 서버를 가리키는 AAAA 레코드를 추가하지 않는다. `www`를 사용하려면 별도 DNS 연결과 인증서/SNI 설정도 함께 추가해야 한다. 아래 초기 설정은 루트 도메인만 대상으로 한다.
+루트 도메인(`@`)의 A 레코드를 `SERVER_IP`로 연결한다. `www`는 루트 도메인으로 CNAME을 설정하거나 같은 서버로 A 레코드를 연결한다. IPv6를 구성하지 않았다면 다른 서버를 가리키는 AAAA 레코드를 추가하지 않는다. HTTPS 설정은 두 호스트를 모두 포함하는 인증서가 필요하며, `www` 접속은 루트 도메인으로 이동한다.
 
 ## 현재 준비 상태
 
@@ -17,7 +17,7 @@
 
    ```bash
    sudo certbot certonly --webroot -w /var/www/wedding-acme \
-     --cert-name allaboutwedding.co.kr -d allaboutwedding.co.kr
+     --cert-name allaboutwedding.co.kr -d allaboutwedding.co.kr -d www.allaboutwedding.co.kr
    ```
 
 3. 발급 성공 후 `wedding-domain-https.nginx.conf`를 `/etc/nginx/sites-available/wedding-domain`에 설치한다. `nginx -t` 성공을 확인하고 reload한다.
@@ -34,6 +34,8 @@
    ```
 
    Hook은 웨딩 인증서가 갱신된 경우에만 `nginx -t` 성공 후 reload한다. 기본 dry-run은 deploy hook을 실행하지 않으므로 hook 구문 검사와 실제 Nginx reload도 별도로 확인한다.
+
+   인증서에 포함된 모든 호스트가 HTTP ACME 경로를 제공해야 한다. 기존 인증서에 `www`가 포함돼 있으면 루트 주소만 정상이어도 갱신에 실패할 수 있다. 두 Nginx 템플릿 모두 루트 주소와 `www`의 HTTP ACME 경로를 제공한다.
 
 Secure 쿠키 적용 후에는 SSH 터널의 HTTP 화면에서 로그인 세션을 사용할 수 없다. 로그인은 정식 HTTPS 도메인으로 진행한다. 인증서 경고를 무시하거나 다른 도메인의 인증서로 대신하지 않는다.
 
