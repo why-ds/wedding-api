@@ -37,6 +37,7 @@ class PostgresIntegrationTest {
     @Autowired JdbcClient jdbc;
     @Autowired PublicationRepository publications;
     @Autowired DemoCatalogRepository demoCatalog;
+    @Autowired DemoProductRepository demoProducts;
     @Autowired javax.sql.DataSource dataSource;
     @Test @org.springframework.transaction.annotation.Transactional
     void syntheticFixtureRemainsVisibleAfterRecheckAndFiltersRunInDatabase() {
@@ -221,7 +222,7 @@ class PostgresIntegrationTest {
         for(var category:CatalogData.Category.values()){
             var page=demoCatalog.list(0,category.name(),"");assertEquals(2,page.total());
             for(var e:page.items()){
-                assertEquals(2,e.data().details().quotes().size());assertEquals(1,e.data().details().photos().size());
+                assertEquals(demoProducts.get(e.id()).isPresent()?0:2,e.data().details().quotes().size());assertEquals(1,e.data().details().photos().size());
                 assertTrue(e.data().organizationName().contains("가상"));assertTrue(e.data().publicPhone().isEmpty());
                 assertTrue(publications.findPublished(e.id()).isEmpty());assertFalse(favoriteListings.existsPublished(e.id()));
                 assertTrue(demoCatalog.get(e.id()).isPresent());
@@ -237,5 +238,29 @@ class PostgresIntegrationTest {
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/directory/"+id)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
         var actor=members.create(UUID.randomUUID()+"@example.test","체험 격리","hash").id();
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->memberService.favorite(actor,id,true));
+    }
+    @Test void referenceProductsReadFromPostgresAndEstimatePubliclyWithoutPublishing() throws Exception {
+        var phone=DemoProductServiceTest.PHONE;
+        var photo=DemoProductServiceTest.PHOTO;
+        assertEquals(3,demoProducts.get(phone).orElseThrow().products().size());
+        assertEquals(2,demoProducts.get(photo).orElseThrow().products().size());
+        assertNull(demoCatalog.get(phone).orElseThrow().data().details().parking().spaces());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/demo/directory/"+phone))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.productSheet.sourceKind").value("USER_PROVIDED_UNVERIFIED"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.productSheet.products[0].amount").value(380000))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.details.quotes.length()").value(0));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/demo/directory/"+phone+"/product-estimate").param("productId","basic"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.subtotal").value(380000));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/demo/directory/"+photo+"/product-estimate").param("productId","album-80").param("option","director","extra-time").param("hours","2").param("extensionOperators","2"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.subtotal").value(4100000));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/demo/directory/"+photo+"/product-estimate").param("productId","album-80").param("option","director","manager"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/demo/directory/"+phone+"/product-estimate").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()).contentType("application/json").content("{}"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnauthorized());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/directory/"+photo))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+        assertFalse(favoriteListings.existsPublished(phone));assertFalse(favoriteListings.existsPublished(photo));
     }
 }
