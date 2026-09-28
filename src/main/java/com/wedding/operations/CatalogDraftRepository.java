@@ -9,6 +9,7 @@ public interface CatalogDraftRepository {
     record Audit(UUID id,UUID actorId,String action,UUID targetId,Instant occurredAt) {}
     record Ticket(UUID id,Instant expiresAt) {}
     Page list(int page,String status);
+    Draft get(UUID id);
     boolean conflicts(CatalogData data,UUID except);
     Draft create(UUID actor,CatalogData data);
     Draft update(UUID actor,UUID id,long version,CatalogData data);

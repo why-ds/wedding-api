@@ -17,7 +17,7 @@ public record CatalogData(
     @Size(max=30) @Pattern(regexp="[0-9+() -]*") String publicPhone,
     @Size(max=1000) String sourceUrl
 ) {
-    public enum Category { VENUE, STUDIO, DRESS, MAKEUP, JEWELRY, HANBOK, SUIT }
+    public enum Category { VENUE, STUDIO, DRESS, MAKEUP, JEWELRY, HANBOK, SUIT, WEDDING_PHOTO, IPHONE_SNAP, WEDDING_VIDEO }
     private static String clean(String value) { return value==null?"":value.strip().replaceAll("\\s+"," "); }
     public CatalogData normalized() { return new CatalogData(clean(externalKey).toLowerCase(Locale.ROOT),clean(organizationName),clean(branchName),category,clean(region),clean(address),clean(publicPhone),clean(sourceUrl)); }
     public String identityKey() { return sha((organizationName+"\u001f"+branchName+"\u001f"+category+"\u001f"+address).toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)); }

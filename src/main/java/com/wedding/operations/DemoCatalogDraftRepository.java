@@ -12,6 +12,7 @@ public class DemoCatalogDraftRepository implements CatalogDraftRepository {
     private final Map<UUID,Draft> drafts=new LinkedHashMap<>();
     private final Map<UUID,Batch> batches=new HashMap<>();
     private final List<Audit> audit=new ArrayList<>();
+    public synchronized Draft get(UUID id){return Optional.ofNullable(drafts.get(id)).orElseThrow(CatalogIntakeService::missing);}
     public synchronized Page list(int page,String status) {
         var all=drafts.values().stream().filter(d->status.isEmpty()||d.status().equals(status))
             .sorted(Comparator.comparing(Draft::updatedAt).reversed().thenComparing(Draft::id)).toList();

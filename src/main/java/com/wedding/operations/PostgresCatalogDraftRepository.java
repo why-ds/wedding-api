@@ -35,7 +35,7 @@ public class PostgresCatalogDraftRepository implements CatalogDraftRepository {
         }catch(DuplicateKeyException ex){throw CatalogIntakeService.conflict();}
         audit(actor,action,id);return get(id);
     }
-    private Draft get(UUID id){return jdbc.sql("SELECT * FROM ops.catalog_draft WHERE id=:id").param("id",id).query(mapper).optional().orElseThrow(CatalogIntakeService::missing);}
+    public Draft get(UUID id){return jdbc.sql("SELECT * FROM ops.catalog_draft WHERE id=:id").param("id",id).query(mapper).optional().orElseThrow(CatalogIntakeService::missing);}
     @Transactional public Draft update(UUID actor,UUID id,long version,CatalogData data) {
         try {
             int rows=jdbc.sql("UPDATE ops.catalog_draft SET external_key=:key,identity_key=:identity,data=CAST(:data AS jsonb),version=version+1,updated_at=now() WHERE id=:id AND version=:version AND status='DRAFT'")

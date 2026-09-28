@@ -30,6 +30,7 @@ class PostgresIntegrationTest {
     @Autowired CatalogDraftRepository drafts;
     @Autowired VenueRepository venues;
     @Autowired JdbcClient jdbc;
+    @Autowired PublicationRepository publications;
     @Autowired javax.sql.DataSource dataSource;
     @Test @org.springframework.transaction.annotation.Transactional
     void syntheticFixtureRemainsVisibleAfterRecheckAndFiltersRunInDatabase() {
@@ -87,5 +88,45 @@ class PostgresIntegrationTest {
             assertEquals(first.get(20,TimeUnit.SECONDS),second.get(20,TimeUnit.SECONDS));
         }
         assertEquals(1,jdbc.sql("SELECT count(*) FROM ops.audit_event WHERE actor_user_id=:id AND action='CATALOG_IMPORT'").param("id",actor).query(Integer.class).single());
+    }
+
+    private CatalogData publishable() {
+        var data=data();
+        return new CatalogData(data.externalKey(),data.organizationName(),data.branchName(),CatalogData.Category.WEDDING_VIDEO,data.region(),data.address(),"","https://example.test/official");
+    }
+    @Test void publicationKeepsApprovedSnapshotUntilExplicitRepublishAndWithdraw() {
+        var actor=admin();var data=publishable();var draft=drafts.create(actor,data);var date=java.time.LocalDate.now();
+        assertEquals(0,publications.list(0,"",data.externalKey(),true).total());
+        var first=publications.publish(actor,draft.id(),0,null,data,date);
+        assertEquals(1,publications.list(0,"WEDDING_VIDEO",data.externalKey(),true).total());
+        var changed=new CatalogData(data.externalKey(),"수정된 이름",data.branchName(),data.category(),data.region(),data.address(),"",data.sourceUrl());
+        var updated=drafts.update(actor,draft.id(),0,changed);
+        assertEquals(data.organizationName(),publications.get(draft.id()).orElseThrow().data().organizationName());
+        assertThrows(ResponseStatusException.class,()->publications.publish(actor,draft.id(),0,first.version(),data,date));
+        var second=publications.publish(actor,draft.id(),updated.version(),first.version(),changed,date);
+        assertEquals(first.listingId(),second.listingId());assertEquals("수정된 이름",second.data().organizationName());
+        assertEquals(2,jdbc.sql("SELECT count(*) FROM catalog.listing_fact WHERE listing_id=:id").param("id",first.listingId()).query(Integer.class).single());
+        assertEquals(1,jdbc.sql("SELECT count(*) FROM catalog.listing_fact WHERE listing_id=:id AND status='APPROVED'").param("id",first.listingId()).query(Integer.class).single());
+        assertThrows(ResponseStatusException.class,()->publications.withdraw(actor,draft.id(),first.version()));
+        publications.withdraw(actor,draft.id(),second.version());
+        assertEquals("SUSPENDED",publications.get(draft.id()).orElseThrow().status());
+        assertEquals(0,publications.list(0,"",data.externalKey(),true).total());
+    }
+    @Test void concurrentPublicationRejectsStaleRequestWithoutDuplicateCanonicalRows() throws Exception {
+        var actor=admin();var data=publishable();var draft=drafts.create(actor,data);
+        java.util.concurrent.Callable<Boolean> publish=()->{try{publications.publish(actor,draft.id(),0,null,data,java.time.LocalDate.now());return true;}catch(ResponseStatusException ex){assertEquals(409,ex.getStatusCode().value());return false;}};
+        try(var executor=Executors.newFixedThreadPool(2)){
+            var a=executor.submit(publish);var b=executor.submit(publish);
+            assertNotEquals(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS));
+        }
+        assertEquals(1,jdbc.sql("SELECT count(*) FROM ops.audit_event WHERE target_id=:id AND action='CATALOG_PUBLISH'").param("id",draft.id()).query(Integer.class).single());
+        assertEquals(1,jdbc.sql("SELECT count(*) FROM catalog.listing WHERE slug=:slug").param("slug","catalog-"+draft.id()).query(Integer.class).single());
+    }
+    @Test void publicationFailureRollsBackSourceAndCanonicalRecords() {
+        var actor=admin();var data=publishable();var draft=drafts.create(actor,data);
+        assertThrows(org.springframework.dao.DataAccessException.class,()->publications.publish(UUID.randomUUID(),draft.id(),0,null,data,java.time.LocalDate.now()));
+        assertTrue(publications.get(draft.id()).isEmpty());
+        assertEquals(0,jdbc.sql("SELECT count(*) FROM catalog.listing WHERE slug=:slug").param("slug","catalog-"+draft.id()).query(Integer.class).single());
+        assertEquals(0,jdbc.sql("SELECT count(*) FROM partner.organization WHERE display_name=:name").param("name",data.organizationName()).query(Integer.class).single());
     }
 }

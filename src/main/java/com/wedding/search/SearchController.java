@@ -14,7 +14,8 @@ public class SearchController {
     @GetMapping("/categories") public List<Map<String,Object>> categories() {
         return List.of(category("VENUE", "예식장", true), category("STUDIO", "스튜디오", false),
             category("DRESS", "드레스", false), category("MAKEUP", "메이크업", false),
-            category("JEWELRY", "예물", false), category("HANBOK", "한복", false), category("SUIT", "예복", false));
+            category("JEWELRY", "예물", false), category("HANBOK", "한복", false), category("SUIT", "예복", false),
+            category("WEDDING_PHOTO", "본식스냅", false), category("IPHONE_SNAP", "아이폰스냅", false), category("WEDDING_VIDEO", "DVD·본식영상", false));
     }
     private Map<String,Object> category(String code, String name, boolean available) { return Map.of("code",code,"name",name,"available",available); }
     @PostMapping("/searches") public Map<String,Object> search(@Valid @RequestBody SearchRequest request) {

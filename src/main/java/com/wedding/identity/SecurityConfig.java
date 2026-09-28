@@ -30,7 +30,7 @@ public class SecurityConfig {
     @Bean SecurityFilterChain securityFilterChain(HttpSecurity http,SecurityContextRepository contexts,AdminAccess admins) throws Exception {
         return http
             .authorizeHttpRequests(a->a
-                .requestMatchers(HttpMethod.GET,"/api/v1/categories","/api/v1/auth/csrf","/api/v1/auth/session","/actuator/health").permitAll()
+                .requestMatchers(HttpMethod.GET,"/api/v1/categories","/api/v1/directory","/api/v1/auth/csrf","/api/v1/auth/session","/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.POST,"/api/v1/searches","/api/v1/auth/register","/api/v1/auth/login").permitAll()
                 .requestMatchers("/api/v1/admin/**").access((authentication,context)->new AuthorizationDecision(admins.allowed(authentication.get())))
                 .requestMatchers("/api/v1/me/**","/api/v1/me","/api/v1/auth/logout").authenticated()
