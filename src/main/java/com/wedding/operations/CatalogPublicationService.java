@@ -12,11 +12,18 @@ public class CatalogPublicationService {
     private final CatalogIntakeService intake;
     public CatalogPublicationService(PublicationRepository publications,CatalogDraftRepository drafts,CatalogIntakeService intake){this.publications=publications;this.drafts=drafts;this.intake=intake;}
     public PublicationRepository.Page browse(int page,String category,String query){return list(page,category,query,true);}
+    @PreAuthorize("isAuthenticated()")
+    public PublicationRepository.Page saved(UUID actor,int page,String category,String query){
+        validate(page,category,query);return publications.list(page,category,query.strip(),true,actor);
+    }
     @PreAuthorize("@adminAccess.allowed(authentication)")
     public PublicationRepository.Page administration(int page){return list(page,"","",false);}
     private PublicationRepository.Page list(int page,String category,String query,boolean publishedOnly){
-        if(page<0||page>5000||query.length()>100||(!category.isEmpty()&&Arrays.stream(CatalogData.Category.values()).noneMatch(c->c.name().equals(category))))throw CatalogIntakeService.bad("검색 조건을 확인해 주세요.");
+        validate(page,category,query);
         return publications.list(page,category,query.strip(),publishedOnly);
+    }
+    private void validate(int page,String category,String query){
+        if(page<0||page>5000||query.length()>100||(!category.isEmpty()&&Arrays.stream(CatalogData.Category.values()).noneMatch(c->c.name().equals(category))))throw CatalogIntakeService.bad("검색 조건을 확인해 주세요.");
     }
     @PreAuthorize("@adminAccess.allowed(authentication)")
     public Optional<PublicationRepository.Entry> state(UUID draft){drafts.get(draft);return publications.get(draft);}

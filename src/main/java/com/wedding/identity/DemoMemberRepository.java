@@ -30,6 +30,7 @@ public class DemoMemberRepository implements MemberRepository {
     public synchronized Set<String> favorites(UUID id) { return Set.copyOf(favorites.getOrDefault(id, Set.of())); }
     public synchronized void favorite(UUID id, UUID listingId, boolean saved) {
         var ids = favorites.computeIfAbsent(id, key -> new HashSet<>());
+        if(saved&&!ids.contains(listingId.toString())&&ids.size()>=500)throw MemberService.favoriteLimit();
         if (saved) ids.add(listingId.toString()); else ids.remove(listingId.toString());
     }
 }

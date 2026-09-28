@@ -19,11 +19,14 @@ public class PostgresPublicationRepository implements PublicationRepository {
         JOIN partner.branch b ON b.id=l.branch_id JOIN partner.organization o ON o.id=b.organization_id
         """;
     private final RowMapper<Entry> mapper=(rs,n)->new Entry(rs.getObject("draft_id",UUID.class),rs.getObject("listing_id",UUID.class),json.readValue(rs.getString("approved_data"),CatalogData.class),rs.getString("status"),rs.getLong("draft_version"),rs.getLong("version"),rs.getObject("reviewed_on",LocalDate.class),rs.getTimestamp("updated_at").toInstant());
-    public Page list(int page,String category,String query,boolean publishedOnly){
+    public Page list(int page,String category,String query,boolean publishedOnly,UUID favoriteUser){
         String where=" WHERE (NOT :public OR (l.status='PUBLISHED' AND b.status='ACTIVE' AND o.status='ACTIVE')) AND (:category='' OR l.category_code=:category) AND (:query='' OR position(lower(:query) IN lower(l.search_text))>0)";
+        where+=" AND (NOT :saved OR EXISTS(SELECT 1 FROM planning.user_favorite f WHERE f.listing_id=l.id AND f.user_id=:member))";
+        UUID member=favoriteUser==null?new UUID(0,0):favoriteUser;
         var rows=jdbc.sql("SELECT p.*,l.status "+FROM+where+" ORDER BY p.updated_at DESC,p.draft_id LIMIT 20 OFFSET :offset")
+            .param("saved",favoriteUser!=null).param("member",member)
             .param("public",publishedOnly).param("category",category).param("query",query).param("offset",page*20).query(mapper).list();
-        var total=jdbc.sql("SELECT count(*) "+FROM+where).param("public",publishedOnly).param("category",category).param("query",query).query(Long.class).single();
+        var total=jdbc.sql("SELECT count(*) "+FROM+where).param("saved",favoriteUser!=null).param("member",member).param("public",publishedOnly).param("category",category).param("query",query).query(Long.class).single();
         return new Page(rows,total,page,true);
     }
     public Optional<Entry> get(UUID draft){return jdbc.sql("SELECT p.*,l.status "+FROM+" WHERE p.draft_id=:id").param("id",draft).query(mapper).optional();}

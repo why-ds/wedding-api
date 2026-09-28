@@ -45,7 +45,14 @@ public class PostgresMemberRepository implements MemberRepository {
     public Set<String> favorites(UUID id) {
         return new HashSet<>(jdbc.sql("SELECT listing_id::text FROM planning.user_favorite WHERE user_id=:id").param("id",id).query(String.class).list());
     }
-    public void favorite(UUID id, UUID listingId, boolean saved) {
+    @Transactional public void favorite(UUID id, UUID listingId, boolean saved) {
+        boolean active=jdbc.sql("SELECT status='ACTIVE' FROM iam.user_account WHERE id=:id FOR UPDATE").param("id",id).query(Boolean.class).optional().orElse(false);
+        if(!active)throw MemberService.unauthorized();
+        if(saved){
+            boolean full=jdbc.sql("SELECT (SELECT count(*) FROM planning.user_favorite WHERE user_id=:id)>=500 AND NOT EXISTS(SELECT 1 FROM planning.user_favorite WHERE user_id=:id AND listing_id=:listing)")
+                .param("id",id).param("listing",listingId).query(Boolean.class).single();
+            if(full)throw MemberService.favoriteLimit();
+        }
         jdbc.sql(saved ? "INSERT INTO planning.user_favorite(user_id,listing_id) VALUES(:id,:listing) ON CONFLICT DO NOTHING" : "DELETE FROM planning.user_favorite WHERE user_id=:id AND listing_id=:listing")
             .param("id",id).param("listing",listingId).update();
     }

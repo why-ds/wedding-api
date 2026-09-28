@@ -115,4 +115,5 @@ erDiagram
 | `POST /api/v1/admin/catalog/{id}/withdraw` | 게시 버전 확인 후 공개 중단 |
 | `/admin` | 업체 초안, 공개 검수, 검수·게시, CSV, 감사 이력 |
 | `/directory` | 실제 검수 후 공개한 업체 목록 |
-| `/` | 기존 가상 예식장 견적 체험 |
+| `/` | 실제 공개 업체 기본 화면 |
+| `/preview/venues` | 기존 가상 예식장 견적 체험 |

@@ -1,6 +1,6 @@
 package com.wedding.identity;
 
-import com.wedding.catalog.VenueRepository;
+import com.wedding.catalog.FavoriteListingRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.http.HttpStatus;
@@ -11,10 +11,10 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class MemberService {
     private final MemberRepository members;
-    private final VenueRepository venues;
+    private final FavoriteListingRepository venues;
     private final PasswordEncoder passwords;
     private final String dummyHash;
-    public MemberService(MemberRepository members, VenueRepository venues, PasswordEncoder passwords) {
+    public MemberService(MemberRepository members, FavoriteListingRepository venues, PasswordEncoder passwords) {
         this.members=members; this.venues=venues; this.passwords=passwords;
         dummyHash=passwords.encode(UUID.randomUUID().toString());
     }
@@ -55,5 +55,6 @@ public class MemberService {
         members.favorite(id,listing,saved); return members.favorites(id);
     }
     static ResponseStatusException conflict() { return new ResponseStatusException(HttpStatus.CONFLICT,"이미 가입된 이메일입니다. 로그인해 주세요."); }
+    static ResponseStatusException favoriteLimit() { return new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"찜은 최대 500곳까지 저장할 수 있습니다. 기존 찜을 정리해 주세요."); }
     static ResponseStatusException unauthorized() { return new ResponseStatusException(HttpStatus.UNAUTHORIZED,"이메일 또는 비밀번호를 확인해 주세요. 로그인 상태가 만료되었을 수도 있습니다."); }
 }

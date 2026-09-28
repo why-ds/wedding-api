@@ -1,6 +1,7 @@
 package com.wedding;
 
 import com.wedding.catalog.VenueRepository;
+import com.wedding.catalog.FavoriteListingRepository;
 import com.wedding.identity.MemberRepository;
 import com.wedding.operations.*;
 import java.util.List;
@@ -24,9 +25,13 @@ import static org.junit.jupiter.api.Assertions.*;
     "spring.datasource.password=ci-only-disposable-password"
 })
 @ActiveProfiles("postgres")
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 @EnabledIfEnvironmentVariable(named="WEDDING_POSTGRES_TESTS", matches="true")
 class PostgresIntegrationTest {
     @Autowired MemberRepository members;
+    @Autowired com.wedding.identity.MemberService memberService;
+    @Autowired FavoriteListingRepository favoriteListings;
+    @Autowired org.springframework.test.web.servlet.MockMvc mvc;
     @Autowired CatalogDraftRepository drafts;
     @Autowired VenueRepository venues;
     @Autowired JdbcClient jdbc;
@@ -128,5 +133,48 @@ class PostgresIntegrationTest {
         assertTrue(publications.get(draft.id()).isEmpty());
         assertEquals(0,jdbc.sql("SELECT count(*) FROM catalog.listing WHERE slug=:slug").param("slug","catalog-"+draft.id()).query(Integer.class).single());
         assertEquals(0,jdbc.sql("SELECT count(*) FROM partner.organization WHERE display_name=:name").param("name",data.organizationName()).query(Integer.class).single());
+    }
+    @Test void realPublishedFavoritesAreAccountBoundAndWithdrawnDataIsHidden() throws Exception {
+        var actor=admin();var data=publishable();var draft=drafts.create(actor,data);
+        var publication=publications.publish(actor,draft.id(),0,null,data,java.time.LocalDate.now());
+        var alice=members.create(UUID.randomUUID()+"@example.test","Alice","hash").id();
+        var bob=members.create(UUID.randomUUID()+"@example.test","Bob","hash").id();
+        assertTrue(favoriteListings.existsPublished(publication.listingId()));
+        memberService.favorite(alice,publication.listingId(),true);
+        memberService.favorite(alice,publication.listingId(),true);
+        assertEquals(1,publications.list(0,"","",true,alice).total());
+        assertEquals(0,publications.list(0,"","",true,bob).total());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/me/directory").param("userId",alice.toString()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(bob.toString())))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.total").value(0));
+        publications.withdraw(actor,draft.id(),publication.version());
+        assertFalse(favoriteListings.existsPublished(publication.listingId()));
+        assertEquals(0,publications.list(0,"","",true,alice).total());
+        assertThrows(ResponseStatusException.class,()->memberService.favorite(bob,publication.listingId(),true));
+        assertTrue(memberService.favorite(alice,publication.listingId(),false).isEmpty());
+    }
+    @Test void concurrentFavoriteWritesCannotExceedTheAccountLimit() throws Exception {
+        var actor=members.create(UUID.randomUUID()+"@example.test","찜 테스트","hash").id();
+        jdbc.sql("""
+            WITH inserted AS (
+              INSERT INTO catalog.listing(branch_id,category_code,name,slug)
+              SELECT (SELECT branch_id FROM catalog.listing LIMIT 1),'VENUE','CI limit fixture',CAST(:user AS text)||'-limit-'||n
+              FROM generate_series(1,499) n RETURNING id
+            ) INSERT INTO planning.user_favorite(user_id,listing_id) SELECT :user,id FROM inserted
+            """).param("user",actor).update();
+        var a=UUID.fromString("10000000-0000-4000-8000-000000000001");
+        var b=UUID.fromString("10000000-0000-4000-8000-000000000002");
+        java.util.function.Function<UUID,Boolean> save=id->{try{members.favorite(actor,id,true);return true;}catch(ResponseStatusException ex){assertEquals(429,ex.getStatusCode().value());return false;}};
+        try(var executor=Executors.newFixedThreadPool(2)){
+            var first=executor.submit(()->save.apply(a));var second=executor.submit(()->save.apply(b));
+            assertNotEquals(first.get(20,TimeUnit.SECONDS),second.get(20,TimeUnit.SECONDS));
+        }
+        assertEquals(500,members.favorites(actor).size());
+        var existing=members.favorites(actor).iterator().next();members.favorite(actor,UUID.fromString(existing),true);
+        assertEquals(500,members.favorites(actor).size());
+    }
+    @Test void deployedDatabaseGuardRejectsTheDisposableDatabaseBeforeAnyWrites() throws Exception {
+        try(var connection=dataSource.getConnection()){
+            assertThrows(IllegalStateException.class,()->DatabaseIdentity.require(connection,"wedding_app"));
+        }
     }
 }

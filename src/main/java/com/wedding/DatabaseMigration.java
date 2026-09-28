@@ -12,6 +12,7 @@ public final class DatabaseMigration {
         // This command intentionally provisions only the clearly labelled synthetic preview.
         if(!"synthetic-preview".equals(System.getenv("WEDDING_MIGRATION_MODE")))
             throw new IllegalStateException("Explicit synthetic-preview migration mode required");
+        try(var connection=DriverManager.getConnection(url,user,password)) { DatabaseIdentity.require(connection,"wedding_migrator"); }
         Flyway.configure().dataSource(url,user,password)
             .locations("classpath:db/migration","classpath:db/demo").load().migrate();
         try(var connection=DriverManager.getConnection(url,user,password)) { grantRuntimeAccess(connection); }

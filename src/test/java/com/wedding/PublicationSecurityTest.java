@@ -19,10 +19,18 @@ class PublicationSecurityTest {
     @Autowired MemberRepository members;
     @Autowired CatalogDraftRepository drafts;
     @Test void publicDirectoryIsBoundedAndDemoDoesNotPretendToBePersistent() throws Exception {
+        mvc.perform(get("/api/v1/me/directory")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/directory")).andExpect(status().isOk()).andExpect(jsonPath("$.persistent").value(false)).andExpect(jsonPath("$.total").value(0));
         mvc.perform(get("/api/v1/directory?page=-1")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/directory?category=UNKNOWN")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/directory").param("query","a".repeat(101))).andExpect(status().isBadRequest());
+    }
+    @Test void databaseStatusIsRestrictedToCurrentAdministrators() throws Exception {
+        mvc.perform(get("/api/v1/admin/storage")).andExpect(status().isUnauthorized());
+        var member=members.create(UUID.randomUUID()+"@example.test","회원","hash");
+        mvc.perform(get("/api/v1/admin/storage").with(user(member.id().toString()).roles("ADMIN"))).andExpect(status().isForbidden());
+        members.grantAdmin(member.id());
+        mvc.perform(get("/api/v1/admin/storage").with(user(member.id().toString()))).andExpect(status().isOk()).andExpect(jsonPath("$.persistent").value(false));
     }
     @Test void publishingRequiresServerSideAdminAndCsrf() throws Exception {
         var normal=members.create(UUID.randomUUID()+"@example.test","회원","hash");

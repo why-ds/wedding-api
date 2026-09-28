@@ -51,6 +51,7 @@ REVOKE CONNECT, TEMPORARY ON DATABASE wedding FROM PUBLIC;
 GRANT CONNECT ON DATABASE wedding TO wedding_app;
 SQL
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d wedding -c 'REVOKE CREATE ON SCHEMA public FROM PUBLIC;'
+python3 "$source_dir/isolate-wedding-database.py"
 cat > /etc/wedding-migrate.env <<ENV
 DB_URL=jdbc:postgresql://127.0.0.1:5432/wedding
 DB_USERNAME=wedding_migrator

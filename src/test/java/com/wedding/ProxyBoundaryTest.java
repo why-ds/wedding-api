@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @ActiveProfiles({"demo","preview"})
 @Import(ProxyBoundaryTest.ProbeConfig.class)
 class ProxyBoundaryTest {
+    // This test runs real Tomcat with demo storage solely to exercise proxy headers.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean PreviewDatabaseGuard databaseGuard;
     @LocalServerPort int port;
     @Test void spoofedStandardForwardedCannotChangeLimiterKey() throws Exception {
         try(var client=HttpClient.newHttpClient()) {
