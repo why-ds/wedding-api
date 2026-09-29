@@ -14,6 +14,7 @@ import org.springframework.security.web.authentication.logout.SecurityContextLog
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -36,12 +37,20 @@ public class MemberController {
     }
     @PostMapping("/auth/register") @ResponseStatus(HttpStatus.CREATED)
     public Member.Profile register(@Valid @RequestBody Registration r,HttpServletRequest request,HttpServletResponse response) {
-        limiter.check(request.getRemoteAddr());
-        var member=service.register(r.email(),r.displayName(),r.password()); signIn(member,request,response); return service.profile(member);
+        limiter.check(request.getRemoteAddr(),r.email());
+        Member member;
+        // Repeated rejections for one email (e.g. probing whether it exists) count against that account too.
+        try { member=service.register(r.email(),r.displayName(),r.password()); }
+        catch(ResponseStatusException ex) { limiter.failed(r.email()); throw ex; }
+        signIn(member,request,response); return service.profile(member);
     }
     @PostMapping("/auth/login") public Member.Profile login(@Valid @RequestBody Login r,HttpServletRequest request,HttpServletResponse response) {
-        limiter.check(request.getRemoteAddr());
-        var member=service.login(r.email(),r.password()); signIn(member,request,response); return service.profile(member);
+        limiter.check(request.getRemoteAddr(),r.email());
+        Member member;
+        try { member=service.login(r.email(),r.password()); }
+        catch(ResponseStatusException ex) { limiter.failed(r.email()); throw ex; }
+        limiter.succeeded(r.email());
+        signIn(member,request,response); return service.profile(member);
     }
     private void signIn(Member member,HttpServletRequest request,HttpServletResponse response) {
         // Discard the anonymous/previous session and its CSRF token before authentication.

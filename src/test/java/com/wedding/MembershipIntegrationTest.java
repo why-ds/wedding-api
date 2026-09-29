@@ -68,6 +68,15 @@ class MembershipIntegrationTest {
         assertNotEquals(anonymousId,client.session.getId());
         client.getRequest("/api/v1/me").andExpect(status().isOk());
     }
+    @Test void repeatedFailuresFromDifferentAddressesLockTheAccount() throws Exception {
+        String email=email();new Browser().register(email);
+        String wrong="{\"email\":\"%s\",\"password\":\"wrong-password\"}".formatted(email);
+        // Each Browser has its own remote address, so only the account key can stop this.
+        for(int i=0;i<10;i++) new Browser().mutate(post("/api/v1/auth/login"),wrong).andExpect(status().isUnauthorized());
+        new Browser().mutate(post("/api/v1/auth/login"),"{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email,PASSWORD)).andExpect(status().isTooManyRequests());
+        var other=email();new Browser().register(other);
+        new Browser().mutate(post("/api/v1/auth/login"),"{\"email\":\"%s\",\"password\":\"%s\"}".formatted(other,PASSWORD)).andExpect(status().isOk());
+    }
     @Test void rejectsDuplicateEmailAndInvalidNamesAndPasswords() throws Exception {
         String email=email();new Browser().register(email);var client=new Browser();
         client.mutate(post("/api/v1/auth/register"),"{\"email\":\"%s\",\"displayName\":\"중복가입\",\"password\":\"%s\"}".formatted(email.toUpperCase(),PASSWORD)).andExpect(status().isConflict());
