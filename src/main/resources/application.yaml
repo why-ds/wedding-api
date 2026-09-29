@@ -27,3 +27,11 @@ management:
     web:
       exposure:
         include: health
+wedding:
+  # Origin used in emailed links. Never derived from the request Host header.
+  public-base-url: ${WEDDING_PUBLIC_BASE_URL:http://127.0.0.1:5173}
+  mail:
+    # log: nothing is delivered (demo prints the message). ses: Amazon SES through the default AWS credential chain.
+    provider: ${WEDDING_MAIL_PROVIDER:log}
+    from: ${WEDDING_MAIL_FROM:}
+    ses-region: ${WEDDING_MAIL_SES_REGION:ap-northeast-2}

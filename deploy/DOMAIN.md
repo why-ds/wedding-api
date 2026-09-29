@@ -39,6 +39,30 @@
 
 Secure 쿠키 적용 후에는 SSH 터널의 HTTP 화면에서 로그인 세션을 사용할 수 없다. 로그인은 정식 HTTPS 도메인으로 진행한다. 인증서 경고를 무시하거나 다른 도메인의 인증서로 대신하지 않는다.
 
+## 메일 발송 (Amazon SES)
+
+회원가입 인증과 비밀번호 재설정 메일에 필요하다. 설정 전에는 새 회원가입을 완료할 수 없다.
+
+1. SES 콘솔(ap-northeast-2)에서 `allaboutwedding.co.kr` 도메인 자격 증명을 만들고, 안내된 DKIM CNAME 3개를 DNS에 추가한다.
+2. DNS에 SPF(`v=spf1 include:amazonses.com ~all`)와 DMARC(`_dmarc` TXT, 처음에는 `v=DMARC1; p=none; rua=mailto:본인주소`)를 추가한다. 이미 SPF 레코드가 있으면 새로 만들지 말고 `include:amazonses.com`만 합친다.
+3. SES 샌드박스 해제(production access)를 신청한다. 승인 전에는 인증한 수신 주소로만 발송된다.
+4. EC2 인스턴스 역할에 아래 정책만 부여한다. 액세스 키를 만들거나 환경 파일에 넣지 않는다.
+
+   ```json
+   {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"ses:SendEmail",
+     "Resource":"arn:aws:ses:ap-northeast-2:ACCOUNT_ID:identity/allaboutwedding.co.kr"}]}
+   ```
+
+5. `/etc/wedding-api.env`에 다음을 추가하고 **wedding-api.service만** 재시작한다.
+
+   ```bash
+   WEDDING_MAIL_PROVIDER=ses
+   WEDDING_MAIL_FROM=All About Wedding <no-reply@allaboutwedding.co.kr>
+   WEDDING_PUBLIC_BASE_URL=https://allaboutwedding.co.kr
+   ```
+
+6. 본인 주소로 가입해 인증 메일과 비밀번호 재설정 메일이 받은편지함에 도착하는지, 링크가 `https://allaboutwedding.co.kr`로 시작하는지 확인한다. 발송 실패는 `journalctl -u wedding-api`에 `Mail delivery failed`로 남는다.
+
 ## 상태 확인
 
 ```bash

@@ -39,6 +39,7 @@ class PostgresIntegrationTest {
     @Autowired DemoCatalogRepository demoCatalog;
     @Autowired DemoProductRepository demoProducts;
     @Autowired javax.sql.DataSource dataSource;
+    @Autowired com.wedding.identity.EmailTokenRepository emailTokens;
     @Test @org.springframework.transaction.annotation.Transactional
     void syntheticFixtureRemainsVisibleAfterRecheckAndFiltersRunInDatabase() {
         jdbc.sql("UPDATE pricing.offer_revision SET verified_at=now()-interval '92 days',recheck_after=now()-interval '1 day' WHERE terms_snapshot @> '{\"demo\":true}'::jsonb").update();
@@ -118,6 +119,42 @@ class PostgresIntegrationTest {
         publications.withdraw(actor,draft.id(),second.version());
         assertEquals("SUSPENDED",publications.get(draft.id()).orElseThrow().status());
         assertEquals(0,publications.list(0,"",data.externalKey(),true).total());
+    }
+    private static String randomHash() {
+        byte[] bytes=new byte[32];new java.security.SecureRandom().nextBytes(bytes);return java.util.HexFormat.of().formatHex(bytes);
+    }
+    @Test void registrationLinksAreSingleUseEvenWhenOpenedConcurrently() throws Exception {
+        String email=UUID.randomUUID()+"@example.test";String first=randomHash(),second=randomHash();
+        var expires=java.time.Instant.now().plusSeconds(600);
+        emailTokens.saveRegistration(first,email,"PG 회원","hash-1",expires);
+        emailTokens.saveRegistration(second,email,"PG 회원","hash-2",expires);
+        try(var executor=Executors.newFixedThreadPool(2)) {
+            var a=executor.submit(()->emailTokens.completeRegistration(first));
+            var b=executor.submit(()->emailTokens.completeRegistration(first));
+            assertEquals(1,java.util.stream.Stream.of(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS)).filter(java.util.Optional::isPresent).count());
+        }
+        var member=members.byEmail(email).orElseThrow();
+        assertTrue(member.emailVerified());assertEquals("hash-1",member.passwordHash());
+        // The other pending link for the same address was retired with the successful one.
+        assertTrue(emailTokens.completeRegistration(second).isEmpty());
+        String expired=randomHash(),late=UUID.randomUUID()+"@example.test";
+        emailTokens.saveRegistration(expired,late,"PG 회원","hash-3",expires);
+        jdbc.sql("UPDATE iam.email_token SET created_at=now()-interval '2 days',expires_at=now()-interval '1 day' WHERE token_hash=:h").param("h",expired).update();
+        assertTrue(emailTokens.completeRegistration(expired).isEmpty());
+        assertTrue(members.byEmail(late).isEmpty());
+    }
+    @Test void passwordResetIsSingleUseAndMovesCredentialTime() throws Exception {
+        String email=UUID.randomUUID()+"@example.test";
+        var member=members.create(email,"PG 회원","old-hash");
+        var before=members.credentialsChangedAt(member.id()).orElseThrow();
+        String token=randomHash(),other=randomHash();var expires=java.time.Instant.now().plusSeconds(600);
+        emailTokens.saveReset(token,member.id(),email,expires);emailTokens.saveReset(other,member.id(),email,expires);
+        Thread.sleep(5);
+        assertTrue(emailTokens.completeReset(token,"new-hash").isPresent());
+        assertEquals("new-hash",members.byEmail(email).orElseThrow().passwordHash());
+        assertTrue(members.credentialsChangedAt(member.id()).orElseThrow().isAfter(before));
+        assertTrue(emailTokens.completeReset(token,"again").isEmpty());
+        assertTrue(emailTokens.completeReset(other,"again").isEmpty());
     }
     @Test void directorySearchIsCaseInsensitiveAndTreatsLikeMetacharactersLiterally() {
         var actor=admin();var base=publishable();

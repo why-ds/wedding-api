@@ -11,6 +11,7 @@ public class DemoMemberRepository implements MemberRepository {
     private final Map<String, UUID> emails = new HashMap<>();
     private final Map<UUID, Set<String>> favorites = new HashMap<>();
     private final Set<UUID> admins = new HashSet<>();
+    private final Map<UUID, java.time.Instant> passwordChanged = new HashMap<>();
     public synchronized boolean isAdmin(UUID id) { return members.containsKey(id) && admins.contains(id); }
     public synchronized void grantAdmin(UUID id) { if(!members.containsKey(id)) throw MemberService.unauthorized(); admins.add(id); }
     public synchronized Optional<Member> byEmail(String email) { return Optional.ofNullable(emails.get(email)).flatMap(this::byId); }
@@ -20,12 +21,20 @@ public class DemoMemberRepository implements MemberRepository {
     }
     public synchronized Member create(String email, String name, String hash) {
         if (emails.containsKey(email)) throw MemberService.conflict();
-        var member = new Member(UUID.randomUUID(), email, name, hash);
-        members.put(member.id(), member); emails.put(email, member.id()); return member;
+        var member = new Member(UUID.randomUUID(), email, name, hash, true);
+        members.put(member.id(), member); emails.put(email, member.id()); passwordChanged.put(member.id(), java.time.Instant.now()); return member;
     }
     public synchronized Member rename(UUID id, String name) {
         var old = byId(id).orElseThrow(MemberService::unauthorized);
-        var member = new Member(id, old.email(), name, old.passwordHash()); members.put(id, member); return member;
+        var member = new Member(id, old.email(), name, old.passwordHash(), old.emailVerified()); members.put(id, member); return member;
+    }
+    public synchronized void changePassword(UUID id, String hash) {
+        var old = byId(id).orElseThrow(MemberService::unauthorized);
+        members.put(id, new Member(id, old.email(), old.displayName(), hash, old.emailVerified()));
+        passwordChanged.put(id, java.time.Instant.now());
+    }
+    public synchronized Optional<java.time.Instant> credentialsChangedAt(UUID id) {
+        return members.containsKey(id) ? Optional.ofNullable(passwordChanged.get(id)) : Optional.empty();
     }
     public synchronized Set<String> favorites(UUID id) { return Set.copyOf(favorites.getOrDefault(id, Set.of())); }
     public synchronized void favorite(UUID id, UUID listingId, boolean saved) {

@@ -17,6 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
  *       because one subscriber usually controls the whole prefix.</li>
  *   <li>Account (normalized email): only failures count, 10 per 5 minutes, cleared by a successful login.
  *       This stops one account being guessed from many addresses (credential stuffing).</li>
+ *   <li>Mail (normalized email): 3 verification/reset messages per 15 minutes, so the endpoints cannot be
+ *       used to flood someone's inbox. Callers skip sending silently, keeping responses identical.</li>
  * </ul>
  * Both tables are bounded LRU maps: when full, the least recently used window is dropped instead of
  * refusing every new client, so flooding the table cannot lock all users out.
@@ -29,11 +31,14 @@ public class AuthRateLimiter {
     static final long NETWORK_WINDOW_MS=60_000;
     static final int ACCOUNT_FAILURE_LIMIT=10;
     static final long ACCOUNT_WINDOW_MS=5*60_000;
+    static final int MAIL_LIMIT=3;
+    static final long MAIL_WINDOW_MS=15*60_000;
     static final int MAX_TRACKED=10_000;
 
     private record Window(long expires,int count) {}
     private final Map<String,Window> networks=lru();
     private final Map<String,Window> accounts=lru();
+    private final Map<String,Window> mails=lru();
     private final LongSupplier clock;
 
     public AuthRateLimiter() { this(System::currentTimeMillis); }
@@ -70,11 +75,20 @@ public class AuthRateLimiter {
     /** A successful login proves the password, so earlier failures stop counting against the account. */
     public synchronized void succeeded(String email) { accounts.remove(accountKey(email)); }
 
+    /** True when another message to this address may be sent now; the send is counted. */
+    public synchronized boolean tryMail(String email) {
+        return tryIncrement(mails,accountKey(email),MAIL_LIMIT,MAIL_WINDOW_MS);
+    }
+
     private void increment(Map<String,Window> table,String key,int limit,long windowMs) {
+        if(!tryIncrement(table,key,limit,windowMs)) throw tooMany();
+    }
+    private boolean tryIncrement(Map<String,Window> table,String key,int limit,long windowMs) {
         long now=clock.getAsLong();
         var current=live(table,key,now);
-        if(current!=null&&current.count()>=limit) throw tooMany();
+        if(current!=null&&current.count()>=limit) return false;
         table.put(key,current==null?new Window(now+windowMs,1):new Window(current.expires(),current.count()+1));
+        return true;
     }
     private int count(Map<String,Window> table,String key) {
         var current=live(table,key,clock.getAsLong());

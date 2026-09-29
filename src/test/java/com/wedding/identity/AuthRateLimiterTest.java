@@ -52,6 +52,14 @@ class AuthRateLimiterTest {
         limiter.check("198.51.100.7","free@example.test");
     }
 
+    @Test void mailBudgetIsPerAddressAndRefillsAfterTheWindow() {
+        for(int i=0;i<AuthRateLimiter.MAIL_LIMIT;i++) assertTrue(limiter.tryMail("Inbox@Example.test"));
+        assertFalse(limiter.tryMail(" inbox@example.test"));
+        assertTrue(limiter.tryMail("other@example.test"));
+        now.addAndGet(AuthRateLimiter.MAIL_WINDOW_MS);
+        assertTrue(limiter.tryMail("inbox@example.test"));
+    }
+
     @Test void fillingTheTableEvictsOldEntriesInsteadOfLockingOutNewClients() {
         // The previous implementation refused every unseen address once 10,000 were tracked.
         for(int i=0;i<AuthRateLimiter.MAX_TRACKED+50;i++) limiter.check("10."+(i>>16&255)+"."+(i>>8&255)+"."+(i&255));

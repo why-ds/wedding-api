@@ -16,6 +16,7 @@ import java.util.Locale;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -27,17 +28,20 @@ public class SecurityConfig {
             .orElseThrow(() -> new UsernameNotFoundException("Account not found"));
     }
     @Bean SecurityContextRepository securityContextRepository() { return new HttpSessionSecurityContextRepository(); }
-    @Bean SecurityFilterChain securityFilterChain(HttpSecurity http,SecurityContextRepository contexts,AdminAccess admins) throws Exception {
+    @Bean SecurityFilterChain securityFilterChain(HttpSecurity http,SecurityContextRepository contexts,AdminAccess admins,MemberRepository members) throws Exception {
         return http
             .authorizeHttpRequests(a->a
                 .requestMatchers(HttpMethod.GET,"/api/v1/categories","/api/v1/directory","/api/v1/directory/{id}","/api/v1/demo/directory","/api/v1/demo/directory/{id}","/api/v1/demo/directory/{id}/product-estimate","/api/v1/auth/csrf","/api/v1/auth/session","/actuator/health").permitAll()
-                .requestMatchers(HttpMethod.POST,"/api/v1/searches","/api/v1/auth/register","/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST,"/api/v1/searches","/api/v1/auth/register","/api/v1/auth/login",
+                    "/api/v1/auth/verify","/api/v1/auth/password-reset","/api/v1/auth/password-reset/confirm").permitAll()
                 .requestMatchers("/api/v1/admin/**").access((authentication,context)->new AuthorizationDecision(admins.allowed(authentication.get())))
                 .requestMatchers("/api/v1/me/**","/api/v1/me","/api/v1/auth/logout").authenticated()
                 .anyRequest().denyAll())
             // Anonymous read-only calculation: no member state is read or modified.
             .csrf(c->c.ignoringRequestMatchers("/api/v1/searches"))
             .addFilterBefore(new JsonBodyLimitFilter(),CsrfFilter.class)
+            // Runs once the session's security context is available, before any authorization decision.
+            .addFilterAfter(new CredentialFreshnessFilter(members),SecurityContextHolderFilter.class)
             .securityContext(c->c.securityContextRepository(contexts).requireExplicitSave(true))
             .requestCache(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable).httpBasic(AbstractHttpConfigurer::disable).logout(AbstractHttpConfigurer::disable)

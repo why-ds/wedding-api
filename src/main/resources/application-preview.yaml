@@ -24,5 +24,6 @@ server:
         name: WEDDINGSESSION
         secure: ${SESSION_COOKIE_SECURE:true}
 wedding:
+  public-base-url: ${WEDDING_PUBLIC_BASE_URL:https://allaboutwedding.co.kr}
   admin:
     bootstrap-enabled: ${WEDDING_ADMIN_BOOTSTRAP_ENABLED:false}

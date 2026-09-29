@@ -18,10 +18,6 @@ public class MemberService {
         this.members=members; this.venues=venues; this.passwords=passwords;
         dummyHash=passwords.encode(UUID.randomUUID().toString());
     }
-    public Member register(String email, String name, String password) {
-        validatePassword(password);
-        return members.create(normalize(email),validName(name),passwords.encode(password));
-    }
     // Provisioning is internal; public registration never chooses an account role.
     Member registerAdmin(String email, String name, String password) {
         validatePassword(password);
@@ -34,14 +30,15 @@ public class MemberService {
         if (!matches || candidate.isEmpty()) throw unauthorized();
         return candidate.get();
     }
-    private String normalize(String email) { return email.strip().toLowerCase(Locale.ROOT); }
-    private void validatePassword(String password) {
+    // Shared with AccountEmailService, which now owns public registration and password reset.
+    String normalize(String email) { return email.strip().toLowerCase(Locale.ROOT); }
+    void validatePassword(String password) {
         if (password.codePointCount(0,password.length())<10 || password.getBytes(StandardCharsets.UTF_8).length>72)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"비밀번호는 10자 이상, UTF-8 기준 72바이트 이내로 입력해 주세요.");
     }
     public Member get(UUID id) { return members.byId(id).orElseThrow(MemberService::unauthorized); }
     public Member.Profile profile(Member member) { return member.profile(members.isAdmin(member.id())); }
-    private String validName(String name) {
+    String validName(String name) {
         String normalized=name.strip();
         if(normalized.length()<2 || normalized.length()>30) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"닉네임은 공백을 제외한 2~30자로 입력해 주세요.");
         return normalized;
