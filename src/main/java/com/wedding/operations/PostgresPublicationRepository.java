@@ -20,14 +20,23 @@ public class PostgresPublicationRepository implements PublicationRepository {
         """;
     private final RowMapper<Entry> mapper=(rs,n)->new Entry(rs.getObject("draft_id",UUID.class),rs.getObject("listing_id",UUID.class),json.readValue(rs.getString("approved_data"),CatalogData.class),rs.getString("status"),rs.getLong("draft_version"),rs.getLong("version"),rs.getObject("reviewed_on",LocalDate.class),rs.getTimestamp("updated_at").toInstant());
     public Page list(int page,String category,String query,boolean publishedOnly,UUID favoriteUser){
-        String where=" WHERE (NOT :public OR (l.status='PUBLISHED' AND b.status='ACTIVE' AND o.status='ACTIVE')) AND (:category='' OR l.category_code=:category) AND (:query='' OR position(lower(:query) IN lower(l.search_text))>0)";
+        String where=" WHERE (NOT :public OR (l.status='PUBLISHED' AND b.status='ACTIVE' AND o.status='ACTIVE')) AND (:category='' OR l.category_code=:category)";
+        // Appended only when present: a generic prepared plan cannot use ix_listing_trgm through "(:query='' OR ...)",
+        // and position()/lower() on the column never matches the gin_trgm_ops index. ILIKE does.
+        boolean text=!query.isEmpty();
+        if(text) where+=" AND l.search_text ILIKE :pattern ESCAPE '\\'";
         where+=" AND (NOT :saved OR EXISTS(SELECT 1 FROM planning.user_favorite f WHERE f.listing_id=l.id AND f.user_id=:member))";
         UUID member=favoriteUser==null?new UUID(0,0):favoriteUser;
-        var rows=jdbc.sql("SELECT p.*,l.status "+FROM+where+" ORDER BY p.updated_at DESC,p.draft_id LIMIT 20 OFFSET :offset")
+        var rowsSpec=jdbc.sql("SELECT p.*,l.status "+FROM+where+" ORDER BY p.updated_at DESC,p.draft_id LIMIT 20 OFFSET :offset")
             .param("saved",favoriteUser!=null).param("member",member)
-            .param("public",publishedOnly).param("category",category).param("query",query).param("offset",page*20).query(mapper).list();
-        var total=jdbc.sql("SELECT count(*) "+FROM+where).param("saved",favoriteUser!=null).param("member",member).param("public",publishedOnly).param("category",category).param("query",query).query(Long.class).single();
-        return new Page(rows,total,page,true);
+            .param("public",publishedOnly).param("category",category).param("offset",page*20);
+        var totalSpec=jdbc.sql("SELECT count(*) "+FROM+where).param("saved",favoriteUser!=null).param("member",member).param("public",publishedOnly).param("category",category);
+        if(text){rowsSpec=rowsSpec.param("pattern",contains(query));totalSpec=totalSpec.param("pattern",contains(query));}
+        return new Page(rowsSpec.query(mapper).list(),totalSpec.query(Long.class).single(),page,true);
+    }
+    /** Substring pattern with LIKE metacharacters escaped, so "50%" or "a_b" match literally. */
+    public static String contains(String query){
+        return "%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
     }
     public Optional<Entry> get(UUID draft){return jdbc.sql("SELECT p.*,l.status "+FROM+" WHERE p.draft_id=:id").param("id",draft).query(mapper).optional();}
     public Optional<Entry> findPublished(UUID listing){return jdbc.sql("SELECT p.*,l.status "+FROM+" WHERE p.listing_id=:id AND l.status='PUBLISHED' AND b.status='ACTIVE' AND o.status='ACTIVE'").param("id",listing).query(mapper).optional();}

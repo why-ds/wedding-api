@@ -119,6 +119,34 @@ class PostgresIntegrationTest {
         assertEquals("SUSPENDED",publications.get(draft.id()).orElseThrow().status());
         assertEquals(0,publications.list(0,"",data.externalKey(),true).total());
     }
+    @Test void directorySearchIsCaseInsensitiveAndTreatsLikeMetacharactersLiterally() {
+        var actor=admin();var base=publishable();
+        var data=new CatalogData(base.externalKey(),"50%_할인 "+base.externalKey(),base.branchName(),base.category(),base.region(),base.address(),"",base.sourceUrl());
+        publications.publish(actor,drafts.create(actor,data).id(),0,null,data,java.time.LocalDate.now());
+        String key=data.externalKey();
+        assertEquals(1,publications.list(0,"","50%_할인 "+key,true).total());
+        assertEquals(1,publications.list(0,"WEDDING_VIDEO",key.toUpperCase(java.util.Locale.ROOT),true).total());
+        assertEquals(0,publications.list(0,"STUDIO",key,true).total());
+        // Unescaped, "5_%" and "%할인 "+key would match as wildcards; escaped they are literal text.
+        assertEquals(0,publications.list(0,"","5_% "+key,true).total());
+        assertEquals(0,publications.list(0,"","%할인 "+key,true).total());
+        assertEquals(1,publications.list(0,"","_할인 "+key,true).total());
+    }
+    @Test void directorySearchUsesTrigramIndex() {
+        // Plan check on the exact predicate shape the repository emits; seq scan is disabled only to
+        // prove the index is usable (the tiny CI table would otherwise legitimately prefer a seq scan).
+        try(var connection=dataSource.getConnection();var statement=connection.createStatement()) {
+            connection.setAutoCommit(false);
+            statement.execute("SET LOCAL enable_seqscan=off");
+            try(var ps=connection.prepareStatement("EXPLAIN SELECT l.id FROM catalog.listing l WHERE l.search_text ILIKE ? ESCAPE '\\'")) {
+                ps.setString(1,PostgresPublicationRepository.contains("가상 업체"));
+                var text=new StringBuilder();
+                try(var rows=ps.executeQuery()){while(rows.next())text.append(rows.getString(1)).append('\n');}
+                assertTrue(text.toString().contains("ix_listing_trgm"),text.toString());
+            }
+            connection.rollback();
+        } catch(java.sql.SQLException ex) { fail(ex); }
+    }
     @Test void concurrentPublicationRejectsStaleRequestWithoutDuplicateCanonicalRows() throws Exception {
         var actor=admin();var data=publishable();var draft=drafts.create(actor,data);
         java.util.concurrent.Callable<Boolean> publish=()->{try{publications.publish(actor,draft.id(),0,null,data,java.time.LocalDate.now());return true;}catch(ResponseStatusException ex){assertEquals(409,ex.getStatusCode().value());return false;}};
